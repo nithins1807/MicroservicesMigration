@@ -1,0 +1,69 @@
+package com.jobapp.jobms.job;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+//RequestMapping("/jobs") : need not specify at method level. any url with /jobs is redirected to this class
+public class JobController {
+
+    private JobService jobService;
+
+    public JobController(JobService jobService) {
+        this.jobService = jobService;
+    }
+
+    @GetMapping("/jobs")
+    public ResponseEntity<List<Job>> findAll() { //to return all jobs listed
+        return ResponseEntity.ok(jobService.findAll());
+    }
+
+    @PostMapping("/jobs")
+    public ResponseEntity<String> createJob(@RequestBody Job job){
+        jobService.createJob(job);
+       // Company c = job.getCompany();
+        return new ResponseEntity<>("Job added successfully!", HttpStatus.CREATED);
+    }
+
+    @GetMapping("/jobs/{id}")
+    public ResponseEntity<Job> getJobById(@PathVariable Long id){
+        Job job = jobService.getJobById(id);
+        if(job != null){
+            return new ResponseEntity<>(job, HttpStatus.OK);
+        }
+        return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+    }
+
+    @DeleteMapping("/jobs/{id}")
+    public ResponseEntity<String> deleteJob(@PathVariable Long id){
+        boolean deleted = jobService.deleteJobById(id);
+        if(deleted){
+            return new ResponseEntity<>("Job deleted successfully", HttpStatus.OK);
+        }
+        return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+    }
+
+    //@PutMapping("/jobs/{id}") : specialized versions. Can also use Request Mapping annotation(can be used at either at a class level or method level)
+    @RequestMapping(value = "/jobs/{id}", method = RequestMethod.PUT)
+    public ResponseEntity<String> updateJob(@PathVariable Long id, @RequestBody Job updatedJob){
+        boolean updated = jobService.updateJob(id, updatedJob);
+        if(updated){
+            return new ResponseEntity<>("Job updated successfully", HttpStatus.OK);
+        }
+        return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+    }
+}
+/*
+
+GET /jobs : get all jobs
+GET /jobs/{id} : get specific job id
+POST /jobs : create a new job, request body contains job details
+DELETE /jobs/{id} : delete a job
+PUT /jobs/{id} : update a job
+GET /jobs/{id}/company : get company associated with id *
+
+
+ */
