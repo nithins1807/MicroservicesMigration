@@ -8,15 +8,22 @@
         <outputRelativeToContentRoot value="true" />
         <module name="reviewms" />
         <module name="companyms" />
+        <module name="service-reg" />
         <module name="jobms" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="Microservices" target="1.5" />
+      <module name="service-reg (1)" target="21" />
+    </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="companyms" options="-parameters" />
       <module name="jobms" options="-parameters" />
       <module name="reviewms" options="-parameters" />
+      <module name="service-reg" options="-parameters" />
+      <module name="service-reg (1)" options="-parameters" />
     </option>
   </component>
 </project>

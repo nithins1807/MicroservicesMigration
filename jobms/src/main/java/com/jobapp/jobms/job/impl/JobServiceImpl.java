@@ -7,6 +7,7 @@ import com.jobapp.jobms.job.JobService;
 import com.jobapp.jobms.job.dto.JobWithCompanyDTO;
 import com.jobapp.jobms.job.external.Company;
 import org.apache.catalina.valves.HealthCheckValve;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -21,6 +22,8 @@ public class JobServiceImpl implements JobService {
     //private List<Job> jobs = new ArrayList<>();
     JobRepository jobRepository;
     //private Long nextId = 1L;
+    @Autowired //provide the instance of rest template on runtime
+    RestTemplate restTemplate;
 
     public JobServiceImpl(JobRepository jobRepository) { //a bean managed by spring
         this.jobRepository = jobRepository;
@@ -35,8 +38,8 @@ public class JobServiceImpl implements JobService {
     private JobWithCompanyDTO convertToDTO(Job job){
             JobWithCompanyDTO jobWithCompanyDTO = new JobWithCompanyDTO();
             jobWithCompanyDTO.setJob(job);
-            RestTemplate restTemplate = new RestTemplate();
-            Company company = restTemplate.getForObject("http://localhost:8081/companies/" + job.getCompanyId(), Company.class);
+            //RestTemplate restTemplate = new RestTemplate();
+            Company company = restTemplate.getForObject("http://companyms:8081/companies/" + job.getCompanyId(), Company.class);
             jobWithCompanyDTO.setCompany(company);
             return jobWithCompanyDTO;
     }
