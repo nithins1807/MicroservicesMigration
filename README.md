@@ -1,7 +1,9 @@
-I’m working on BUG 8972881. The repro steps specifically mention /api/entities/search and the expected behavior is that the X-Search-Term header value should be encoded in DevTools.
+I only need to make the encoding change for /api/entities/search.
 
-In entity-id-finder.service.ts, I see other methods also sending X-Search-Term, such as /api/entities/searchChildrenEntitiesForRegion and exact match search.
+In entity-id-finder.service.ts, I updated the search() method so X-Search-Term uses this.getEncodedTerm(searchTerm).
 
-Should I apply encoding only to /api/entities/search because that is the endpoint mentioned in the defect, or should I update all methods in this service that send X-Search-Term for consistency?
+Please update the related spec file entity-id-finder.service.spec.ts only for this /api/entities/search flow.
 
-Please check the current usage and suggest the safest scope of change without unnecessarily expanding the defect.
+The test should verify that when the search term contains special characters like SG3s@%$34 %*+,-/;<=>^|, the request header X-Search-Term contains the encoded value from encodeURIComponent(searchTerm).
+
+Do not update specs for searchSelectedEntity, searchChildrenEntitiesForRegion, or searchExactMatch since those APIs are out of scope for this defect.
