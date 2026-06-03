@@ -1,9 +1,17 @@
-I only need to make the encoding change for /api/entities/search.
+@Test
+public void shouldDecodeEncodedSearchTermForEntitySearch() throws Exception {
+    String searchTerm = "SG3s@%$34 %++,-/;:<=>^|";
+    String encodedSearchTerm = "SG3s%40%25%2434%20%25%2B%2B%2C-%2F%3B%3A%3C%3D%3E%5E%7C";
 
-In entity-id-finder.service.ts, I updated the search() method so X-Search-Term uses this.getEncodedTerm(searchTerm).
+    when(entityService.search(searchTerm, IdType.ALL))
+            .thenReturn(Collections.emptyList());
 
-Please update the related spec file entity-id-finder.service.spec.ts only for this /api/entities/search flow.
+    this.mockMvc.perform(get("/api/entities/search")
+                    .header("X-Search-Term", encodedSearchTerm)
+                    .header("X-Search-Type", "ALL"))
+            .andDo(print())
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString("[]")));
 
-The test should verify that when the search term contains special characters like SG3s@%$34 %*+,-/;<=>^|, the request header X-Search-Term contains the encoded value from encodeURIComponent(searchTerm).
-
-Do not update specs for searchSelectedEntity, searchChildrenEntitiesForRegion, or searchExactMatch since those APIs are out of scope for this defect.
+    verify(entityService).search(searchTerm, IdType.ALL);
+}
