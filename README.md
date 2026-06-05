@@ -1,160 +1,78 @@
+Hi everyone, for this story I reviewed the acceptance criteria and also investigated the existing Medicaid implementation.
 
-Think as a senior full-stack developer.
+My understanding is that Medicaid already has the Visit Summary dropdown in the contact documentation flow. This story is mainly asking us to bring Medicare to the same behavior, and make sure the selected value is saved and available through contact history going forward.
 
-Context:
+ac1a
+The AC says when an internal PRM user documents Medicare and Medicaid visits, they should see a Visit Summary dropdown.
 
-User story 9097019: PRM Dashboard - Contact History - Adding Visit Summary.
+For Medicaid, this already exists in the UI.
 
-Acceptance criteria:
+For Medicare, I understand we need to add or complete the same dropdown behavior with the same values:
+Negative, Neutral, and Positive.
 
-1. As an internal user with access to PRM,
+ac1b
+The selected Visit Summary value should be saved when the user confirms the contact history record.
 
-   a. When I document Medicare and Medicaid visits,
+From investigation, Medicaid already has most of this flow: UI, form control, payload, backend request, service mapping, entity, and DB column.
 
-      i. I want to see a dropdown field "Visit Summary" with values:
+For Medicare, I need to complete the save flow, including request payload, backend DTO, service mapping, entity mapping, and the database column.
 
-         - Negative
+ac1c
+The AC also says contact_history_v should include this new field.
 
-         - Neutral
+My understanding is that the view should expose Visit Summary so it can be used when contact history is retrieved or reported.
 
-         - Positive
+One item I want to confirm is whether contact_history_v should include Visit Summary for both Medicare and Medicaid, or only Medicare as part of this story.
 
-   b. This value will be stored in the database going forward.
+implementation understanding 
+Technically, I am planning to follow the existing Medicaid pattern and apply the same flow for Medicare.
 
-   c. The view contact_history_v also includes the new field.
+The implementation areas are:
 
-Current status:
+1. Medicare dropdown values should come from the same backend VisitSummary enum/config flow.
+2. Medicare UI should show Visit Summary with Negative, Neutral, and Positive.
+3. Medicare form validation should match Medicaid if the field is required.
+4. Medicare request payload should include visitSummary.
+5. Backend MedicareRequest should accept visitSummary.
+6. Medicare service should set visitSummary on the Medicare contact history entity.
+7. Medicare entity should map visitSummary to a DB column.
+8. Liquibase should add visit_summary to contact_history_medicare.
+9. contact_history_v should expose the visit_summary field.
+10. Medicare read-only contact history display should show the saved Visit Summary value.
+11. Unit/UI/backend tests should be updated around this flow.
 
-- The Visit Summary field already exists for Medicaid.
+current stqtus
+Investigation is completed. I traced the existing Medicaid flow and identified the gaps for Medicare.
 
-- I need to implement the same behavior for Medicare.
+I have already worked on the Medicare UI dropdown side. I am now working through the backend and database changes so the selected Visit Summary value is saved and available later in contact history.
 
-- Do not make any code changes yet.
+questions to po
+1. Since Medicaid already has Visit Summary, can we confirm this story is mainly to bring Medicare to parity with Medicaid?
+2. 2. Should Visit Summary be required for Medicare the same way it appears to be required for Medicaid?
+   3. 3. Can we confirm the dropdown values should be exactly Negative, Neutral, and Positive for Medicare?
+4. After saving, where should Visit Summary be visible to the user? Only in the contact history detail modal, or also as a column in the Contact History grid?
+5. 5. For contact_history_v, should the view include Visit Summary for both Medicare and Medicaid records, or only Medicare?
+   6. 6. For existing old records, is it acceptable for Visit Summary to be blank/null since the value was not captured previously?
 
-- Only investigate and report.
+qa
 
-Task:
+From a QA perspective, I want to confirm the expected test coverage.
 
-Trace the complete Medicaid Visit Summary flow and identify exactly what needs to be done for Medicare.
+My understanding is QA should validate:
 
-Please investigate:
+1. Medicare Visit Summary dropdown is visible.
+2. Dropdown has Negative, Neutral, and Positive values.
+3. If required, user cannot confirm without selecting Visit Summary.
+4. User can select a value and save the Medicare contact.
+5. Saved value persists in the database.
+6. Saved value is visible when reopening/viewing the contact history record.
+7. Medicaid existing behavior is not broken.
+8. Existing records with no Visit Summary should show blank or dash, not break the page.
 
-1. Frontend/UI:
+closing
+So overall, my understanding is: Medicaid already has this field, and we are adding the same Visit Summary behavior for Medicare, making sure it is saved, retrieved, displayed, and included in contact_history_v. I will follow the existing Medicaid implementation pattern unless there is a different business expectation.
 
-   - Which Angular component/template adds "Visit Summary" for Medicaid?
 
-   - How the dropdown values are populated.
 
-   - Whether the field is required.
 
-   - How the selected value is stored in the form.
 
-   - How the payload is built and sent to backend.
-
-   - Whether Medicare has a similar form section and what is missing.
-
-2. Backend/API:
-
-   - Which API receives the Medicaid contact history/documentation request.
-
-   - Which DTO/model/request field carries the Visit Summary value.
-
-   - Which controller/service/repository/entity handles it.
-
-   - Whether Medicare uses the same API/payload or a separate one.
-
-   - Whether Medicare DTO/entity already has the field or not.
-
-3. Database:
-
-   - Which table/column stores Medicaid Visit Summary.
-
-   - Whether Medicare uses the same table or a different table.
-
-   - Check Liquibase changesets related to Visit Summary.
-
-   - Check whether the column already exists for Medicare storage.
-
-   - Check contact_history_v and how Medicaid Visit Summary is included.
-
-   - Identify whether the view already supports Medicare or needs update.
-
-4. Tests:
-
-   - Identify existing frontend/backend tests for Medicaid Visit Summary.
-
-   - Identify which tests need to be added or updated for Medicare.
-
-   - Do not write tests yet; just list them.
-
-Rules:
-
-- Do not edit any files.
-
-- Do not generate patches.
-
-- Do not run formatting.
-
-- Do not run migrations.
-
-- Use read-only commands only, such as:
-
-  - rg
-
-  - git grep
-
-  - find
-
-  - cat
-
-  - sed
-
-  - grep
-
-  - git diff
-
-- If you need to inspect code, only read files.
-
-Expected output:
-
-Give me an investigation report with:
-
-A. Medicaid Visit Summary current flow
-
-- UI file paths and line numbers
-
-- TS/component/form logic file paths and line numbers
-
-- API/payload mapping file paths and line numbers
-
-- Backend controller/service/model/entity paths and line numbers
-
-- DB table/column/view/liquibase paths and line numbers
-
-B. Medicare current flow
-
-- UI/API/backend/DB paths
-
-- What is already present
-
-- What is missing
-
-C. Exact implementation plan for Medicare
-
-- Frontend changes needed
-
-- Backend changes needed
-
-- DB/Liquibase/view changes needed
-
-- Test changes needed
-
-D. Risk/clarification questions
-
-- Mention if Medicare and Medicaid share the same table/API or not.
-
-- Mention if the Visit Summary dropdown values come from hardcoded UI constants, config, lookup API, or database.
-
-- Mention if we need confirmation on the exact table/column or if the existing Medicaid pattern is clear.
-
-Again: only investigate and report. Do not make changes.
