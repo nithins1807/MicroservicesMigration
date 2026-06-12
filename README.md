@@ -1,45 +1,21 @@
-I need help tracing a UI defect in the Quality/Stars Report → Measure Detail page.
+Hi, this looks like it might be the fix for the zero-value KPI Measure filter issue.
 
-Defect:
-When I click any Measure Detail KPI with value 0 for the first time, the table Measure filter shows “(0)” instead of the KPI name.
+Picture 1 — Change in selectKpi()
 
-Example:
-Page: Quality/Stars Report → Measure Detail
-KPI section: Potential Data Opportunities
-KPI clicked: CBP with value 0
+I added logic to get the actual measure ID for the clicked KPI:
 
-Expected:
-The Measure column filter should show “CBP”.
+const kpiMeasureId = this.measureIdMap[kpiLabel] ?? kpiLabel;
 
-Actual:
-The Measure column filter shows “(0)”.
+Then I included that kpiMeasureId in the requiredMeasureIds list.
 
-Other zero KPIs where this may happen:
-CBP, EED, GSD_HBAPOOR, BCS, COL, GSD, eGFR, KED, OMW, uACR
+The reason is that for zero-value KPIs, there may be no grid rows, so ag-Grid may not already have that measure ID available in the Measure filter values. This change makes sure the clicked KPI’s measure ID is added before the filter is applied.
 
-Please trace this end to end in the frontend code.
+I also changed the order so mergeAndInjectMeasureIdValues(requiredMeasureIds) runs before buildKpiLabelFilter(kpiLabel). This way, the required measure IDs are available first, and then the KPI filter is built/applied.
 
-Things to check:
-1. Find the component/template for Quality/Stars Report → Measure Detail.
-2. Find the click handler for KPI cards/measure counts.
-3. Check what value is passed when clicking the KPI: measure name/code vs KPI count.
-4. Check where the table/grid Measure filter is being set.
-5. Check if the code is reading innerText/display text from the KPI instead of using the measure code.
-6. Check if zero-value KPIs are handled differently from non-zero KPIs.
-7. Check if the first-click behavior is different because filters are initialized lazily or defaulting to count.
-8. Check the API request/payload after clicking the KPI and confirm whether measure is sent as “CBP” or “0/(0)”.
-9. Identify the exact file, function, and line causing the issue.
-10. Suggest the smallest safe fix and any unit/spec test changes needed.
+Picture 2 — Change in mergeAndInjectMeasureIdValues()
 
-Likely bug:
-The click handler may be passing the KPI count/value `0` instead of the measure code/name like `CBP`.
+I removed filterMeasureId.refreshFilterValues() after setFilterValues(merged).
 
-Expected fix direction:
-Use the measure code/name from the KPI metadata, not the displayed count.
+My understanding is that setFilterValues(merged) adds the required measure IDs manually, but refreshFilterValues() was rebuilding the filter values from the grid row data again. Since zero-value KPIs do not have rows, that refresh could remove the manually added measure ID.
 
-Please give me:
-- The file path(s)
-- The exact method/function involved
-- The root cause
-- The smallest code fix
-- The spec/test case to add or update
+So this change keeps the injected zero-value KPI measure ID available in the filter. Based on testing, this seems to resolve the issue, but please let me know if you see any edge cases I should consider.
