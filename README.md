@@ -1,37 +1,36 @@
-I need to investigate defect 9143167.
+I implemented similar Visit Summary functionality for Medicare based on the existing Medicaid implementation.
 
-Title: Release - Rx Quality Opportunities - Duplicate records showing for few patients under 2026 Polypharmacy ACH/COB tab.
+Issue:
+In the Contact History grid, I can see the Visit Summary column, but Medicare Visit Summary values are not getting reflected. When both Medicaid and Medicare values are present, the grid only shows the Medicaid Visit Summary value. The Medicare Visit Summary value is not displayed in the grid.
 
-Steps to reproduce:
-1. Login to Compass application with internal role.
-2. Select Entity SG3FMHCA and LOB as Medicare.
-3. Click Apply Filter.
-4. Navigate to Rx Quality Opportunities.
-5. Under 2026 Rx Measure Summary tab, click the warning count hyperlink for COB Measure in Grid.
-6. Application redirects to 2026 Polypharmacy ACH/COB tab.
+Please trace the complete flow and help me find the issue.
 
-Expected result:
-The grid should show one record per COB measure/patient.
+Check these areas:
+1. Add/Edit Contact form:
+   - Is Medicare visitSummary being captured correctly?
+   - Is the selected Medicare Visit Summary value being sent in the request payload?
 
-Actual result:
-Duplicate records are showing for a few patients under the 2026 Polypharmacy ACH/COB tab.
+2. Backend save logic:
+   - Is Medicare visitSummary being saved to the correct Medicare column/table?
+   - Is it accidentally saving only Medicaid visitSummary?
 
-Please help me find the root cause. Trace the full flow from UI click to API call, service layer, repository/query, and SQL/view/table used for the 2026 Polypharmacy ACH/COB grid.
+3. DB/View:
+   - Does the Contact History view include both Medicaid and Medicare visit summary fields?
+   - Is the view only selecting Medicaid visit summary?
+   - Is there any COALESCE/CASE logic that prioritizes Medicaid and ignores Medicare?
 
-Specifically check:
-1. Which API is called when clicking the COB warning count hyperlink.
-2. Which backend controller/service/repository handles this request.
-3. Which SQL query, DB view, or table is used to populate the ACH/COB tab.
-4. Whether duplicates are coming from backend data/query joins or frontend grid rendering.
-5. Whether the query is missing DISTINCT, GROUP BY, or proper join conditions.
-6. Whether the duplicate rows differ by any hidden fields like risk code, contact info, measure year, provider, entity, or patient identifiers.
-7. What should be the correct unique key for this grid — patient + measure + year, or something else.
-8. Compare this with ACH tab or previous year logic if available.
+4. API response for Contact History grid:
+   - Does the response contain Medicare visitSummary?
+   - If both Medicaid and Medicare are present, which value is being mapped to the grid field?
 
-Please give me:
-- Root cause summary
-- Exact files/classes/methods to check
-- Query or code causing duplicates
-- Suggested fix
-- Unit test / validation steps
-- Any questions I should ask the team if the data relationship is unclear
+5. Frontend grid mapping:
+   - Is the grid using only one field like visitSummary?
+   - Should the logic decide between Medicaid vs Medicare based on LOB?
+   - Is Medicare value overwritten by Medicaid value?
+
+Expected:
+When the contact is Medicare, the Contact History grid should show the Medicare Visit Summary value.
+When the contact is Medicaid, it should show the Medicaid Visit Summary value.
+If both exist, the displayed value should match the selected/current LOB logic.
+
+Please identify the exact file, method, DTO/model, query/view, and frontend column mapping that need changes.
