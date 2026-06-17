@@ -1,36 +1,30 @@
-I implemented similar Visit Summary functionality for Medicare based on the existing Medicaid implementation.
+I’m investigating duplicate rows in the output table `rx_quality_polypharmacy`.
 
-Issue:
-In the Contact History grid, I can see the Visit Summary column, but Medicare Visit Summary values are not getting reflected. When both Medicaid and Medicare values are present, the grid only shows the Medicaid Visit Summary value. The Medicare Visit Summary value is not displayed in the grid.
+Context:
+- Aggregator takes input tables from Synapse.
+- It creates/output writes data into Hyperscale.
+- The affected output table is `rx_quality_polypharmacy`.
+- I found related Scala files like:
+  - `RxQualityPolyPharmacyInputComponent.scala`
+  - `RxQualityPolyPharmacyOutputCollection.scala`
+  - other `RxQualityPolyPharmacy*.scala` files
+- One Synapse input table I found is `dha_polypharm_cob`.
 
-Please trace the complete flow and help me find the issue.
+Please help me trace exactly how `rx_quality_polypharmacy` is created.
 
-Check these areas:
-1. Add/Edit Contact form:
-   - Is Medicare visitSummary being captured correctly?
-   - Is the selected Medicare Visit Summary value being sent in the request payload?
+Do not make code changes yet. First investigate and explain:
 
-2. Backend save logic:
-   - Is Medicare visitSummary being saved to the correct Medicare column/table?
-   - Is it accidentally saving only Medicaid visitSummary?
+1. Which class/file is responsible for creating or writing `rx_quality_polypharmacy`.
+2. What is the full flow from input tables → transformation logic → output collection/table.
+3. Which Synapse input tables are used for this output.
+4. Where joins/unions/groupBy/distinct logic are happening.
+5. Whether duplicate rows can be introduced by:
+   - duplicate input data from Synapse
+   - join conditions creating many-to-many matches
+   - missing distinct/dropDuplicates
+   - unioning same data twice
+   - incorrect keys in transformation logic
+6. What columns define uniqueness for `rx_quality_polypharmacy`.
+7. What queries I can run on Synapse input tables and Hyperscale output table to confirm the duplicate source.
 
-3. DB/View:
-   - Does the Contact History view include both Medicaid and Medicare visit summary fields?
-   - Is the view only selecting Medicaid visit summary?
-   - Is there any COALESCE/CASE logic that prioritizes Medicaid and ignores Medicare?
-
-4. API response for Contact History grid:
-   - Does the response contain Medicare visitSummary?
-   - If both Medicaid and Medicare are present, which value is being mapped to the grid field?
-
-5. Frontend grid mapping:
-   - Is the grid using only one field like visitSummary?
-   - Should the logic decide between Medicaid vs Medicare based on LOB?
-   - Is Medicare value overwritten by Medicaid value?
-
-Expected:
-When the contact is Medicare, the Contact History grid should show the Medicare Visit Summary value.
-When the contact is Medicaid, it should show the Medicaid Visit Summary value.
-If both exist, the displayed value should match the selected/current LOB logic.
-
-Please identify the exact file, method, DTO/model, query/view, and frontend column mapping that need changes.
+Please give me the files/methods to check in order, and explain the flow in simple terms.
