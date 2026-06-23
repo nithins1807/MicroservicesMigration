@@ -1,30 +1,45 @@
-I’m investigating duplicate rows in the output table `rx_quality_polypharmacy`.
+I am working on a ticket to remove the Puerto Rico bucket from our Attestation/Nurse Review workflow.
 
-Context:
-- Aggregator takes input tables from Synapse.
-- It creates/output writes data into Hyperscale.
-- The affected output table is `rx_quality_polypharmacy`.
-- I found related Scala files like:
-  - `RxQualityPolyPharmacyInputComponent.scala`
-  - `RxQualityPolyPharmacyOutputCollection.scala`
-  - other `RxQualityPolyPharmacy*.scala` files
-- One Synapse input table I found is `dha_polypharm_cob`.
+Business Requirement:
+- Puerto Rico should no longer be a separate bucket.
+- Any records currently assigned to the Puerto Rico bucket should instead be assigned based on LOB.
+- Medicare and Commercial -> Medicare bucket.
+- Medicaid -> Medicaid bucket.
+- Florida-specific buckets remain unchanged.
 
-Please help me trace exactly how `rx_quality_polypharmacy` is created.
+Important domain information:
+- Puerto Rico records are identified by:
+  HEDIS_DETAILS.PROVIDER_STATE = 'PR'
+- Historically records with provider_state='PR' were routed to a PUERTO_RICO bucket.
+- The UI currently contains a Puerto Rico bucket option which must be removed.
+- Acceptance Criteria states:
+  1. Puerto Rico bucket removed from UI.
+  2. Puerto Rico-specific code removed from codebase.
+  3. Puerto Rico records refiled into Medicare or Medicaid buckets depending on LOB.
 
-Do not make code changes yet. First investigate and explain:
+Please:
+1. Trace the complete bucket assignment flow from attestation upload/search through Nurse Review Util.
+2. Find all usages of:
+   - "Puerto Rico"
+   - "PUERTO_RICO"
+   - "'PR'"
+   - providerState
+   - provider_state
+3. Identify:
+   - Backend routing logic
+   - Repository queries
+   - Specifications
+   - DTOs
+   - Enums
+   - Angular UI components
+   - Dropdown options
+   - Filters
+4. Show me:
+   - Where Puerto Rico bucket is introduced
+   - Where bucket counts are calculated
+   - Where records are assigned to buckets
+5. Recommend exact code changes required.
+6. Highlight any tests that must be updated.
+7. Identify any places where removing Puerto Rico could break existing logic.
 
-1. Which class/file is responsible for creating or writing `rx_quality_polypharmacy`.
-2. What is the full flow from input tables → transformation logic → output collection/table.
-3. Which Synapse input tables are used for this output.
-4. Where joins/unions/groupBy/distinct logic are happening.
-5. Whether duplicate rows can be introduced by:
-   - duplicate input data from Synapse
-   - join conditions creating many-to-many matches
-   - missing distinct/dropDuplicates
-   - unioning same data twice
-   - incorrect keys in transformation logic
-6. What columns define uniqueness for `rx_quality_polypharmacy`.
-7. What queries I can run on Synapse input tables and Hyperscale output table to confirm the duplicate source.
-
-Please give me the files/methods to check in order, and explain the flow in simple terms.
+Start by mapping the complete request flow and bucket assignment architecture before proposing code changes.
