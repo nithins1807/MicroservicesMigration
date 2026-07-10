@@ -1,45 +1,31 @@
-I am working on a ticket to remove the Puerto Rico bucket from our Attestation/Nurse Review workflow.
+I need to fix Azure DevOps bug 9278265.
 
-Business Requirement:
-- Puerto Rico should no longer be a separate bucket.
-- Any records currently assigned to the Puerto Rico bucket should instead be assigned based on LOB.
-- Medicare and Commercial -> Medicare bucket.
-- Medicaid -> Medicaid bucket.
-- Florida-specific buckets remain unchanged.
+Please investigate the codebase and help me identify the root cause before making any changes.
 
-Important domain information:
-- Puerto Rico records are identified by:
-  HEDIS_DETAILS.PROVIDER_STATE = 'PR'
-- Historically records with provider_state='PR' were routed to a PUERTO_RICO bucket.
-- The UI currently contains a Puerto Rico bucket option which must be removed.
-- Acceptance Criteria states:
-  1. Puerto Rico bucket removed from UI.
-  2. Puerto Rico-specific code removed from codebase.
-  3. Puerto Rico records refiled into Medicare or Medicaid buckets depending on LOB.
+Bug Summary:
+- "View Bookmark" icon is not showing the filled state after clicking "View Bookmark".
+- Expected: After restoring a saved view, the bookmark icon should become filled, indicating the current layout matches the saved bookmark.
+- Actual: The bookmark icon remains unfilled even though the saved configuration is restored.
 
-Please:
-1. Trace the complete bucket assignment flow from attestation upload/search through Nurse Review Util.
-2. Find all usages of:
-   - "Puerto Rico"
-   - "PUERTO_RICO"
-   - "'PR'"
-   - providerState
-   - provider_state
+Please do the following:
+
+1. Find the implementation of:
+   - Bookmark icon component
+   - View Bookmark functionality
+   - Save Bookmark functionality
+   - Restore/View Bookmark functionality
+   - Logic that determines whether the bookmark icon is filled or unfilled.
+
+2. Trace the complete flow from clicking "View Bookmark" until the icon state is updated.
+
 3. Identify:
-   - Backend routing logic
-   - Repository queries
-   - Specifications
-   - DTOs
-   - Enums
-   - Angular UI components
-   - Dropdown options
-   - Filters
-4. Show me:
-   - Where Puerto Rico bucket is introduced
-   - Where bucket counts are calculated
-   - Where records are assigned to buckets
-5. Recommend exact code changes required.
-6. Highlight any tests that must be updated.
-7. Identify any places where removing Puerto Rico could break existing logic.
+   - Which frontend component manages the bookmark state.
+   - Which backend API (if any) is called.
+   - Which variables, stores, services, or observables determine the icon state.
+   - Whether the comparison is based on filters, column layout, sorting, grouping, or another object.
 
-Start by mapping the complete request flow and bucket assignment architecture before proposing code changes.
+4. Explain why the icon does not become filled after restoring the bookmark.
+
+5. Suggest the smallest possible fix that follows the existing coding patterns.
+
+Do not modify any code yet. First explain your findings with file names, methods, and a step-by-step execution flow.
