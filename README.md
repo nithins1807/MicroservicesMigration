@@ -1,10 +1,35 @@
-I am working on the existing branch:
 
-AB#9506162/feature-branch-de-ui-spring-boot-4-upgrade
+The latest Sonar scan now shows 1 New Major Issue in
+DevWebSecurityConfigurerAdapterConfigTest.java.
 
-This branch contains the Spring Boot 4 / Spring Security upgrade work. The current PR is failing the Sonar quality gate because coverage on new code is 57.1%, while the requirement is >= 80%.
+Please inspect the current Sonar-related test code and make the smallest changes necessary.
 
-Sonar currently shows these two files at 0% coverage on new code:
+The visible Major finding is:
+"Remove this object instantiation and use 'DevWebSecurityConfigurerAdapter.class' instead."
+
+It currently comes from a test similar to:
+
+DevWebSecurityConfigurerAdapter adapter =
+    new DevWebSecurityConfigurerAdapter();
+assertThat(adapter).isNotNull();
+
+Fix this appropriately without changing production behavior.
+
+Also inspect the other new Sonar findings in this test class:
+- assertion chains asking for a message before isTrue()
+- unnecessary throws Exception declarations
+- test method naming convention warning
+
+Fix straightforward new-code Sonar issues where safe, but do not broadly refactor the tests or production code.
+
+Then:
+1. Run the targeted security tests.
+2. Run ./gradlew clean test.
+3. Show me the final diff.
+4. Do not commit or push.
+
+
+
 
 1. src/main/java/com/humana/dataentitlement/security/AzureADWebSecurityConfigurerAdapter.java
 2. src/main/java/com/humana/dataentitlement/security/DevWebSecurityConfigurerAdapter.java
