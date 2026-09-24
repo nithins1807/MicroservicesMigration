@@ -1,86 +1,53 @@
+I need you to investigate and implement a safe database-indexing change for a SQL Server performance issue in this repository.
 
-The latest Sonar scan now shows 1 New Major Issue in
-DevWebSecurityConfigurerAdapterConfigTest.java.
+Work carefully and use the existing repository conventions. Do not immediately create files or modify SQL. First inspect the repo, understand how the query is implemented, how Liquibase migrations are structured, and what indexes already exist in source-controlled migrations.
 
-Please inspect the current Sonar-related test code and make the smallest changes necessary.
+CONTEXT
 
-The visible Major finding is:
-"Remove this object instantiation and use 'DevWebSecurityConfigurerAdapter.class' instead."
+Azure DevOps story:
+9552994 - "Add indexes to speed up slow hedis_details query"
 
-It currently comes from a test similar to:
+This is the short-term indexing fix.
 
-DevWebSecurityConfigurerAdapter adapter =
-    new DevWebSecurityConfigurerAdapter();
-assertThat(adapter).isNotNull();
+There is a separate story:
+9553018 - "Optimize the SQL Hedis_Details SQL statement to make it more performant"
 
-Fix this appropriately without changing production behavior.
+Do NOT rewrite or materially restructure the SQL as part of this task. Keep SQL optimization separate.
 
-Also inspect the other new Sonar findings in this test class:
-- assertion chains asking for a message before isTrue()
-- unnecessary throws Exception declarations
-- test method naming convention warning
+Production incident:
+9499901 - "Infrastructure Monitoring - Hyperscale reached to 100%"
 
-Fix straightforward new-code Sonar issues where safe, but do not broadly refactor the tests or production code.
+The production Azure SQL Hyperscale database reached 100% CPU.
 
-Then:
-1. Run the targeted security tests.
-2. Run ./gradlew clean test.
-3. Show me the final diff.
-4. Do not commit or push.
+SRE/DBA investigation found this HEDIS query was a major resource consumer. At one point it was reported to account for roughly 40% of CPU usage when SQL Server selected a bad execution plan.
 
+Query Store showed multiple execution plans for the same query with materially different resource consumption.
 
+As an immediate mitigation, the DBA:
+- updated statistics on hedis_details
+- forced a lower-cost execution plan
 
+That reduced CPU usage, but this is a temporary mitigation.
 
-1. src/main/java/com/humana/dataentitlement/security/AzureADWebSecurityConfigurerAdapter.java
-2. src/main/java/com/humana/dataentitlement/security/DevWebSecurityConfigurerAdapter.java
+The development work is intended to provide a more durable solution.
 
-There is already an existing test:
+There have also been other historical Hyperscale CPU incidents, so do NOT assume this HEDIS query is the root cause of every historical CPU incident. Scope this work specifically to the query below.
 
-src/test/java/com/humana/dataentitlement/security/AzureADWebSecurityConfigurerAdapterTest.java
+CURRENT QUERY SHAPE
 
-That test currently covers basic class instantiation and CsrfCookieFilter processing, but it does not appear to cover the new Spring Security configuration logic.
+The query roughly performs:
 
-For AzureADWebSecurityConfigurerAdapter, Sonar shows approximately:
-- 4 new lines to cover
-- 4 uncovered lines
-- 4 conditions to cover
-- 0% coverage on new code
-
-One area that appears responsible is this request matcher in the filterChain configuration:
-
-request -> request.getServletPath().startsWith("/api/")
-        || request.getServletPath().startsWith("/actuator/")
-
-Please do the following:
-
-1. Inspect the current production classes and existing tests first. Do not assume the code exactly matches this description.
-2. Identify exactly which new lines/branches in AzureADWebSecurityConfigurerAdapter and DevWebSecurityConfigurerAdapter are currently not being exercised.
-3. Make the smallest reasonable changes needed to get Sonar new-code coverage above 80%.
-4. Prefer adding meaningful unit tests over changing production code solely for coverage.
-5. If the inline RequestMatcher makes the Azure logic difficult to unit test, it is acceptable to extract it into a package-private static final RequestMatcher inside AzureADWebSecurityConfigurerAdapter, as long as behavior remains exactly the same.
-6. If extracted, test at least these cases:
-   - /api/entities -> matches
-   - /actuator/health -> matches
-   - /home -> does not match
-   This should exercise both sides of the OR condition.
-7. Review DevWebSecurityConfigurerAdapter and add only the minimum tests needed for its uncovered new lines.
-8. Reuse the project's existing JUnit 5, Mockito, AssertJ, and Spring Security testing patterns. Do not introduce new dependencies.
-9. Do not rewrite or broadly refactor the Spring Boot 4 upgrade.
-10. Do not change application behavior, security rules, URLs, authorization behavior, headers, CSRF behavior, or Azure authentication configuration.
-11. Do not modify unrelated files.
-12. Preserve the existing code style.
-
-After making the changes:
-
-- Run the targeted security tests first.
-- Then run the complete test suite with the Gradle wrapper.
-- Report:
-  a. exactly which files you changed
-  b. what tests you added
-  c. why each test improves Sonar coverage
-  d. test results
-  e. any remaining likely Sonar coverage or code-quality issues
-
-Do not commit or push anything. I want to review the diff first.
-
-Before editing, show me your proposed minimal change plan based on the actual code you find.
+SELECT
+    SUM(CASE WHEN lob = 'Medicaid'
+             AND providerState NOT IN ('FL')
+             AND status >= 40 THEN 1 ELSE 0 END),
+    SUM(CASE WHEN lob = 'Medicare'
+             AND providerState NOT IN ('FL')
+             AND status >= 40 THEN 1 ELSE 0 END),
+    SUM(CASE WHEN lob = 'Medicare'
+             AND providerState = 'FL'
+             AND status >= 40 THEN 1 ELSE 0 END),
+    SUM(CASE WHEN lob = 'Medicaid'
+             AND providerState = 'FL'
+             AND status >= 40 THEN 1 ELSE 0 END)
+FROM (...)
