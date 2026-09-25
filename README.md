@@ -1,49 +1,93 @@
-Now inspect the existing index definitions for hedis_details / agg_hedis_details in detail.
+Now analyze the SQL Server execution-plan behavior for this query using everything you have established from the repository.
 
-Do not analyze query performance yet and do not modify anything.
+Do NOT modify code and do NOT recommend or create a new index yet.
 
-Focus on:
+I captured the actual execution plan in the development database for the same query.
 
-aggregator/src/main/scala/com/tsi/aggregator/hedisdetail/HedisDetailReport.scala
+Important observations from the actual plan:
 
-and the createIndex implementation it calls.
+1. SQL Server resolves hedis_details to the generated physical agg_hedis_details_* table.
 
-For every index created for agg_hedis_details, give me:
+2. One operator is:
 
-1. Index name
-2. Whether it is clustered or nonclustered
-3. Whether it is unique
-4. Key columns IN ORDER
-5. INCLUDE columns, if any
+   Index Seek
+   Index: humanaMemberIdIdx_idx
+   Table: agg_hedis_details_1_68_528_20260916_78351f4_1018
 
-Pay particular attention to:
+   Actual Number of Rows for All Executions: 487
+   Number of Rows Read: 487
+   Number of Executions: 49
 
-- humanaMemberIdIdx_idx
-- any index containing humanaMemberId
-- any index containing measureId
-- any index containing both humanaMemberId and measureId
-- the attestation-related composite index you mentioned
+   Estimated Number of Rows Per Execution: ~7.51639
+   Estimated Number of Rows for All Executions: ~389.984
 
-For humanaMemberIdIdx_idx specifically, show me the exact createIndex call from the source and explain what arguments are passed as key columns vs INCLUDE columns.
+   Seek predicate:
+   hd.humanaMemberId = attestation_status.humana_member_id
 
-Also show me the implementation/signature of createIndex() so we can verify how those arguments translate into the generated SQL Server CREATE INDEX statement.
+3. We also observed a RID Lookup against the same agg_hedis_details physical table in the execution plan.
 
-Finally, tell me whether ANY existing index could cover this access pattern:
+4. SET STATISTICS IO showed approximately:
 
-JOIN:
-attestation_status.humana_member_id = hd.humanaMemberId
-attestation_status.measure_id = hd.measureId
+   agg_hedis_details...:
+       Scan count: 49
+       logical reads: 612
 
-with the query also requiring:
-eligibilityDateCYTD
-eligibilityDatePFY
-CYTD
-PFY
-compliantCYTD
-compliantPFY
-lob
-providerState
+   attestation_status:
+       Scan count: 1
+       logical reads: 39
 
-Do not recommend a new index yet.
-Do not change code.
-Just report the exact existing index definitions and whether an existing index already contains these columns.
+   measure_years:
+       Scan count: 1
+       logical reads: 3
+
+   Total execution time was approximately 518 ms in this development run.
+
+5. From the repository investigation, we now know:
+
+   humanaMemberIdIdx_idx:
+       key = humanaMemberId
+       INCLUDE = none
+
+   attestationIdx_idx keys:
+       measurementYear,
+       lob,
+       measureId,
+       humanaMemberId,
+       eligibilityDateCYTD,
+       eligibilityDatePFY,
+       eligibilityDatePPFY
+
+   INCLUDE = none
+
+The production incident involves high CPU/resource utilization from this query, but this execution was performed against development data, so do NOT assume the development row counts or 518 ms runtime represent production scale.
+
+Analyze specifically:
+
+1. Why is SQL Server choosing humanaMemberIdIdx_idx for this part of the plan?
+
+2. Explain what the 49 executions mean in the context of the join.
+
+3. Why can an Index Seek still be followed by a RID Lookup?
+
+4. Based on the actual query, identify exactly which hd columns are unavailable from humanaMemberIdIdx_idx and therefore may require access back to the base row.
+
+5. Explain how the combination:
+
+   Index Seek -> RID Lookup
+
+   behaves for this query.
+
+6. Determine whether the execution-plan evidence is consistent with the repository index definitions we just inspected.
+
+7. Explain whether the ~612 logical reads on agg_hedis_details are plausibly connected to the repeated seeks/lookups, but do not claim causation unless the plan proves it.
+
+8. Identify any evidence in the plan that suggests repeated row-by-row access caused by a Nested Loops join. If the provided observations are insufficient to prove that, explicitly say what execution-plan operator/properties I need to inspect next.
+
+9. Distinguish clearly between:
+   - facts proven by the execution plan
+   - reasonable interpretations
+   - things we still need to verify
+
+Do not propose the final index yet.
+
+The purpose of this step is to understand exactly WHY the current index access pattern may be expensive before deciding what index change should be made.
