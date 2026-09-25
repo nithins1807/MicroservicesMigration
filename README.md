@@ -1,29 +1,38 @@
-We are investigating a production SQL Server performance incident involving high CPU/resource usage from a reporting query.
+Good. Before doing any performance or indexing analysis, investigate one discrepancy.
 
-I have identified the SQL query involved. It works with data related to:
+The native SQL you found references:
 
-- attestation_status
-- measure_years
-- hedis_details / agg_hedis_details
+hedis_details
 
-The query also produces values such as:
+However, the actual SQL Server execution plan for this same query shows SQL Server accessing a physical object named similar to:
 
-- toBeReviewedMedicaid
-- toBeReviewedMedicare
-- toBeReviewedMedicareFlorida
-- toBeReviewedMedicaidFlorida
+agg_hedis_details_1_68_528_20260916_78351f4_1018
 
-Before analyzing performance, I want to understand where this query comes from in the application.
+I need to understand the relationship between these two.
 
-Please search this repository and identify:
+Search all available repositories/code and determine:
 
-1. The exact file(s) where this query is defined or generated.
-2. The class and method responsible for executing it.
-3. Whether it is native SQL, JPA/Hibernate-generated SQL, a stored procedure, or constructed another way.
-4. The repository/service/API flow that eventually invokes this query.
-5. The database tables involved according to the code.
+1. What exactly is `hedis_details` in the application/database:
+   - physical table
+   - view
+   - synonym
+   - dynamically created object
+   - or something else.
 
-Do not modify any code.
-Do not suggest indexes or query optimizations yet.
+2. What `agg_hedis_details_*` represents and where those generated/versioned tables come from.
 
-For now, only trace the query from the application code to the database and explain what you find, with file paths and method names.
+3. How a query written against `hedis_details` ends up accessing `agg_hedis_details_*` in the SQL Server execution plan.
+
+4. Whether there is code/scripts responsible for creating, switching, renaming, aliasing, or referencing these generated tables.
+
+5. Where indexes for `agg_hedis_details_*` are defined or created, if that information exists in the available repositories.
+
+Search all repositories available locally, not just acuity-ui.
+
+Give me exact file paths, methods/scripts and relevant code references for anything you find.
+
+If the relationship cannot be established from these repositories, explicitly say what is missing rather than assuming.
+
+Do not modify anything.
+Do not recommend a new index yet.
+Do not optimize the SQL yet.
