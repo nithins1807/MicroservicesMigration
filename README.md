@@ -1,53 +1,41 @@
-Good. Do not recommend an index yet.
-
-Before we design any index, I want to verify the exact execution-plan tree and RID Lookup behavior.
-
-From everything established so far, we know:
-
-- humanaMemberIdIdx_idx has only humanaMemberId as its key and no INCLUDE columns.
-- The Index Seek executes 49 times.
-- The Index Seek reads/returns 487 rows total.
-- The query needs many additional hd columns.
-- The execution plan contains a RID Lookup against the same agg_hedis_details_* heap.
-- STATISTICS IO reports scan count 49 and 612 logical reads for agg_hedis_details_*.
-
-I now need you to tell me exactly what information I should collect from the SQL Server execution plan to prove the remaining behavior.
-
-Specifically, tell me how to inspect and report:
-
-1. The RID Lookup operator:
-   - Actual Number of Rows
-   - Number of Rows Read
-   - Number of Executions
-   - Estimated Number of Rows
-   - Estimated Number of Executions, if available
-   - Output List
-   - Predicate
-   - Seek/Probe information if present
-   - Actual I/O Statistics if available
-
-2. The Nested Loops operator immediately associated with:
-   Index Seek -> RID Lookup
-
-   I need:
-   - Logical Operation
-   - Actual Number of Rows
-   - Number of Executions
-   - Estimated Number of Rows
-   - Outer References
-   - Predicate
-   - With Ordered Prefetch / Optimized properties, if present
-
-3. The next Nested Loops / join operator above that subtree that connects this hd access to attestation_status / measure_years.
-
-4. The operator feeding the 49 executions into the humanaMemberId Index Seek. I want to determine exactly what produces those 49 values.
-
-Do NOT analyze or redesign the query yet.
-
-Do NOT recommend CREATE INDEX yet.
-
-Give me a short checklist of exactly which operators I should click in the graphical execution plan and which properties I should screenshot/copy for you.
-
-Also tell me which side of each Nested Loops operator is the outer input and which is the inner input based on the graphical plan, so I know what to capture.
-
-The goal of this step is evidence collection only. After I provide those properties, we will determine exactly how many RID Lookups occur and which columns/predicates force those lookups.
+I collected the actual RID Lookup properties from the execution plan. Update your analysis using these exact facts, and correct any previous assumptions that conflict with them.
+RID Lookup object:
+agg_hedis_details_1_68_528_20260916_78351f4_1018
+Properties:
+- Physical/Logical Operation: RID Lookup
+- Storage: RowStore
+- Index Kind: Heap
+- Actual Number of Rows for All Executions: 48
+- Number of Rows Read: 487
+- Number of Executions: 487
+- Estimated Number of Executions: 389.985
+- Estimated Number of Rows Per Execution: 1
+- Estimated Number of Rows for All Executions: 389.985
+- Actual Rebinds: 0
+- Actual Rewinds: 0
+We previously established that humanaMemberIdIdx_idx is a nonclustered index whose only key is humanaMemberId, with no INCLUDE columns, and its Index Seek executes 49 times and produces 487 rows.
+The RID Lookup predicate shown by the actual plan contains conditions involving:
+- measureId
+- isOnshoreOnly
+- CYTD
+- compliantCYTD
+- PFY
+- compliantPFY
+The RID Lookup output list includes at least:
+- providerState
+- CYTD
+- PFY
+- lob
+- compliantCYTD
+- compliantPFY
+- eligibilityDateCYTD
+- eligibilityDatePFY
+Analyze only what this new evidence establishes.
+Specifically explain:
+1. Why 49 Index Seek executions can produce 487 rows and therefore 487 RID Lookup executions.
+2. What it means that the RID Lookup reads 487 rows but returns only 48.
+3. Which predicates are being evaluated only after the heap row is fetched because humanaMemberIdIdx_idx does not contain those columns.
+4. Whether this now provides evidence of repeated row-by-row heap access and post-lookup filtering.
+5. Correct any statements from your previous analysis that are no longer accurate.
+Separate proven facts from interpretation.
+Do NOT recommend or create an index yet. Do NOT modify code. At the end, tell me the single next execution-plan operator/property we should inspect before designing the index.
