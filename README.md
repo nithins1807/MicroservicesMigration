@@ -1,50 +1,5 @@
-Good. Continue with only the next investigation step.
-
-We have now confirmed from the actual execution plan:
-
-- humanaMemberIdIdx_idx Index Seek executes 49 times.
-- It produces 487 rows.
-- The RID Lookup against agg_hedis_details_* executes 487 times.
-- The physical table is a Heap.
-- RID Lookup Number of Rows Read = 487.
-- RID Lookup Actual Number of Rows for All Executions = 48.
-- Therefore 439/487 rows are filtered at the RID Lookup.
-- The RID Lookup's own Predicate contains:
-  measureId,
-  isOnshoreOnly,
-  CYTD,
-  compliantCYTD,
-  PFY,
-  compliantPFY.
-- eligibilityDateCYTD and eligibilityDatePFY appear in the RID Lookup Output List but were not identified in its Predicate.
-- providerState and lob are also carried in the Output List.
-- Do not recommend an index yet.
-
-Now determine from the repository/query structure exactly where the remaining predicates involving:
-
-- eligibilityDateCYTD
-- eligibilityDatePFY
-- base_event_date
-
-should be evaluated in the execution plan.
-
-First re-read the exact SQL in
-NurseReviewMeasureDropDownRepository.java.
-
-Show me the exact relevant JOIN/ON condition from the source and explain how it relates:
-
-attestation_status.base_event_date
-
-to
-
-hedis_details.eligibilityDateCYTD
-hedis_details.eligibilityDatePFY
-
-Then tell me exactly which execution-plan operator I need to click next to verify that behavior in the actual plan.
-
-Do NOT design an index.
-Do NOT modify code.
-Do NOT analyze unrelated operators.
-Do NOT assume the predicate location from the SQL alone.
-
-End with a very short checklist of the exact properties/screenshots I should capture from that ONE operator.
+I inspected the Nested Loops (Inner Join) directly above the RID Lookup, Node ID 7.
+Actual Number of Rows for All Executions = 487, Number of Executions = 1, Estimated Rows = 389.985, Optimized = False.
+Outer References contains attestation_status.humana_member_id and Expr1034.
+The Output List includes attestation_status.humana_member_id, measure_id, base_event_date, status, my.abbr, and Bmk1005.
+I do not see a Predicate property displayed for this Nested Loops operator in the Properties pane. Based on this new evidence, update the analysis. Do not recommend an index yet. Tell me only the single next thing I should inspect or capture.
