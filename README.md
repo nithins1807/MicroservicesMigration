@@ -1,482 +1,842 @@
-I need you to investigate and propose an indexing solution for a SQL Server / Azure SQL Hyperscale production performance incident.
+I need you to investigate and implement a database indexing fix for a production performance incident in this repository.
 
-For now, focus ONLY on indexing.
-
-Do NOT optimize or rewrite the SQL query.
-Do NOT change CASE statements or other query logic.
-Do NOT make code changes immediately.
-
-First inspect the repository, understand how the relevant tables and indexes are created, then recommend the appropriate index change and show me the exact code/files that would need to change.
-
-==================================================
-PRODUCTION INCIDENT CONTEXT
-==================================================
-
-Production incident title:
-
-"Infrastructure Monitoring - Hyperscale reached to 100%"
-
-The incident states:
-
-"Engaged DBA to update the stats on Hedis_details and force plan to lower cost plan id, which cleared the CPU usage."
-
-The incident recommendation for indexing is approximately:
-
-"Add clustered/non-clustered index on measureId / lob / Provider state / Status (Hedis_details)"
-
-Treat this recommendation as a lead, NOT as a finalized index design.
-
-Do not automatically create one index with exactly:
-
-(measureId, lob, providerState, status)
-
-We need to determine the correct index structure based on the actual query, execution plans, existing indexes, and repository implementation.
+IMPORTANT:
+- Read this entire context before doing anything.
+- Do NOT immediately modify files.
+- First inspect the repository and determine how this database object/table and its indexes are managed.
+- The current scope is INDEXING ONLY.
+- Do NOT rewrite, refactor, or optimize the SQL query itself unless I explicitly ask later.
+- Do NOT invent table/index definitions that are not supported by the repository or the evidence below.
+- Clearly distinguish confirmed facts from recommendations/hypotheses.
+- Before making changes, show me your findings and proposed implementation.
 
 ==================================================
-PRODUCTION EXECUTION PLAN
+1. PRODUCTION PROBLEM
 ==================================================
 
-The incident contains a comparison between a BAD production execution plan and a BETTER execution plan.
+We are investigating a production performance incident involving a SQL Server query used for HEDIS/attestation reporting.
 
-BAD PLAN:
+The reported symptom is high resource usage / poor query performance, including CPU concerns in production.
 
-The bad plan contains a:
+The current remediation approach is:
 
-Table Scan (Heap)
+Phase 1: Investigate and improve indexing.
+Phase 2: Query/SQL optimization later if indexing alone is insufficient.
 
-against the physical agg_hedis_details table.
+For this task, work ONLY on Phase 1.
 
-The highlighted Table Scan showed approximately 99% of the estimated plan cost.
+I have reproduced/analyzed the query in the development database and captured an ACTUAL execution plan plus STATISTICS IO information.
 
-This occurred when Azure SQL Hyperscale CPU reached approximately 100%.
-
-BETTER PLAN:
-
-The better production plan uses:
-
-Index Seek
-    ->
-RID Lookup
-
-against agg_hedis_details.
-
-The DBA:
-- updated statistics on Hedis_details
-- forced the lower-cost/better plan
-
-After this, CPU usage cleared.
-
-Therefore, the primary indexing objective is to understand how we can support an efficient indexed access path and reduce the possibility of SQL Server choosing a large Table Scan on agg_hedis_details.
+Do not assume development performance numbers will equal production numbers. Development has a much smaller/different dataset. We are using the dev plan to understand the access pattern and identify an indexing deficiency.
 
 ==================================================
-CURRENT DEV EXECUTION PLAN
+2. QUERY BEING INVESTIGATED
 ==================================================
 
-The current DEV execution plan looks much closer to the production BETTER plan than the BAD plan.
+The query has parameters approximately like:
 
-Relevant operators include:
+DECLARE @P0 varchar(8000) = '2026';
+DECLARE @P1 int = NULL;
+DECLARE @P2 int = NULL;
 
-- Index Seek on agg_hedis_details
-- RID Lookup on agg_hedis_details
-- Nested Loops
-- Clustered Index Scan on attestation_status
-- Filter
-- Sort
-- Stream Aggregate
-- Sequence Project
-- Segment
+The outer query calculates four counts:
 
-For this indexing task, concentrate mainly on agg_hedis_details.
+- toBeReviewedMedicaid
+- toBeReviewedMedicare
+- toBeReviewedMedicareFlorida
+- toBeReviewedMedicaidFlorida
+
+using SUM(CASE ...) expressions involving:
+
+lob
+providerState
+status
+
+The logic distinguishes:
+
+lob = 'Medicaid'
+lob = 'Medicare'
+providerState = 'FL'
+providerState NOT IN ('FL')
+status >= 40
+
+The query derives the latest attestation information from:
+
+attestation_status
+
+Relevant columns include:
+
+id
+humana_member_id
+measure_id
+measure_year
+base_event_date
+status
+created_date
+eaf_type_id
+
+The relevant filtering/ranking logic is approximately:
+
+WHERE measure_year = @P0
+  AND status <> 10
+  AND eaf_type_id IN (1, 3)
+
+RANK() OVER (
+    PARTITION BY
+        humana_member_id,
+        measure_id,
+        measure_year,
+        base_event_date
+    ORDER BY created_date DESC
+)
+
+Then it keeps:
+
+rnk = 1
+status IS NOT NULL
+
+That result is joined to:
+
+measure_years my
+
+using approximately:
+
+my.measurementYear = atts.measure_year
+
+It is then INNER JOINed to the HEDIS details table (alias hd) using:
+
+atts.measure_id = hd.measureId
+AND atts.humana_member_id = hd.humanaMemberId
+
+The join/filter then has CYTD/PFY logic.
+
+For CYTD, conceptually:
+
+my.abbr = 'CYTD'
+
+AND
+
+(
+    (atts.base_event_date IS NOT NULL
+     AND atts.base_event_date = hd.eligibilityDateCYTD)
+
+    OR
+
+    (atts.base_event_date IS NULL
+     AND hd.eligibilityDateCYTD IS NULL)
+)
+
+AND CYTD = 'Y'
+AND compliantCYTD = 'N'
+
+OR equivalent PFY logic:
+
+my.abbr = 'PFY'
+
+AND
+
+(
+    (atts.base_event_date IS NOT NULL
+     AND atts.base_event_date = hd.eligibilityDatePFY)
+
+    OR
+
+    (atts.base_event_date IS NULL
+     AND hd.eligibilityDatePFY IS NULL)
+)
+
+AND PFY = 'Y'
+AND compliantPFY = 'N'
+
+There is also approximately:
+
+WHERE (@P1 IS NULL OR hd.isOnshoreOnly = @P2)
+
+The data is eventually grouped approximately by:
+
+atts.humana_member_id,
+hd.lob,
+hd.providerState
+
+and MAX(status) is used before the final SUM(CASE...) calculations.
+
+Again: DO NOT optimize/rewrite this query as part of this task.
+The query information is being provided so you can understand the required access pattern.
 
 ==================================================
-CURRENT DEV INDEX SEEK
+3. IMPORTANT EXECUTION PLAN FINDING
 ==================================================
 
-The Index Seek against the physical agg_hedis_details table showed approximately:
+The major indexing-related finding from the actual execution plan is on the HEDIS details table.
 
-Actual Number of Rows for All Executions:
-487
+The physical development table observed in the execution plan was:
 
-Number of Rows Read:
-487
+[acuity-develop].[agg_hedis_details_1_68_528_20260916_78351f4_1018]
 
-Number of Executions:
-49
+Alias:
 
-Estimated Number of Executions:
-~51.88
+hd
 
-Estimated Number of Rows Per Execution:
-~7.5
+IMPORTANT:
+This physical table name appears generated/versioned.
 
-Estimated Number of Rows for All Executions:
-~390
+DO NOT blindly hardcode this exact table name into a migration.
 
-Important:
-
-Rows Read = Rows Returned = 487
-
-So the Index Seek itself is efficient.
-
-SQL Server is successfully using an existing nonclustered index to find candidate rows.
-
-Do not treat the Index Seek as the problem.
+Search the repository to determine:
+- how agg_hedis_details tables are generated/managed,
+- whether there is a logical/base table definition,
+- how indexes are created on these generated tables,
+- whether index creation happens through Liquibase, SQL scripts, stored procedures, application code, data-management code, or another mechanism.
 
 ==================================================
-CURRENT DEV RID LOOKUP
+4. CURRENT INDEX USED BY SQL SERVER
 ==================================================
 
-Immediately after the Index Seek there is a RID Lookup against the physical agg_hedis_details heap.
+The actual execution plan showed SQL Server using:
 
-RID Lookup statistics:
+humanaMemberIdIdx_idx
 
-Actual Number of Rows for All Executions:
-48
+This is a NONCLUSTERED index.
 
-Number of Rows Read:
-487
+We inspected its metadata.
 
-Number of Executions:
-487
+It contains ONLY:
 
-Estimated Number of Executions:
-~390
+KEY:
+humanaMemberId
 
-Estimated Number of Rows Per Execution:
+There are no INCLUDE columns.
+
+Confirmed metadata:
+
+index_name:
+humanaMemberIdIdx_idx
+
+column_name:
+humanaMemberId
+
+key_ordinal:
 1
 
-Estimated Number of Rows for All Executions:
-~390
+is_included_column:
+0
 
-Estimated plan cost shown:
-~87%
+So this is essentially:
 
-Important:
-The 87% value is an estimated relative plan cost, not actual execution time.
+INDEX humanaMemberIdIdx_idx
+    KEY (humanaMemberId)
 
-The RID Lookup predicate includes:
+It does NOT cover the rest of the data required by this query.
+
+==================================================
+5. INDEX SEEK FINDINGS
+==================================================
+
+The execution plan showed an Index Seek against:
+
+humanaMemberIdIdx_idx
+
+The seek predicate is effectively:
+
+hd.humanaMemberId = attestation_status.humana_member_id
+
+Observed development execution information:
+
+Actual rows across executions: 487
+Rows read: 487
+Number of executions: 49
+
+The estimated number of executions was approximately:
+
+51.88454
+
+Estimated rows per execution:
+
+~7.51639
+
+Estimated rows for all executions:
+
+~389.984
+
+Table cardinality shown in the plan:
+
+~8707 rows
+
+This part is important:
+
+SQL Server CAN seek efficiently by humanaMemberId.
+
+Therefore, the problem is NOT simply:
+
+"SQL Server is doing a full table scan."
+
+It already has a usable member ID index and performs an Index Seek.
+
+The issue is what happens AFTER that seek.
+
+==================================================
+6. RID LOOKUP FINDING
+==================================================
+
+Immediately after/along with that Index Seek, the execution plan contains a:
+
+RID Lookup
+
+against the same HEDIS details table.
+
+The RID Lookup was executed:
+
+487 times
+
+Actual rows returned across all executions:
+
+48
+
+Rows read:
+
+487
+
+Estimated executions:
+
+~389.985
+
+Estimated rows per execution:
+
+1
+
+The table is a heap / does not appear to have a clustered index for this access path, which is why this is a RID Lookup rather than a Key Lookup.
+
+This lookup exists because the narrow humanaMemberId index does not contain all the additional columns needed by the query.
+
+The RID Lookup output list showed columns including:
+
+providerState
+CYTD
+PFY
+lob
+compliantCYTD
+compliantPFY
+eligibilityDateCYTD
+eligibilityDatePFY
+
+The lookup also participates in evaluating the join/predicate involving:
 
 attestation_status.measure_id = hd.measureId
 
-The lookup uses a bookmark/RID similar to:
+The key observation is:
 
-Bmk1005
+The current index finds candidate rows by humanaMemberId, but SQL Server repeatedly has to go back to the heap/base row to retrieve/evaluate the additional columns required by this query.
 
-The Output List visibly includes providerState and likely other columns required from hedis_details.
+Conceptually the current access path is:
 
-Current behavior appears roughly like:
+humanaMemberIdIdx_idx
+        |
+        | seek using humanaMemberId
+        v
+candidate HEDIS rows
+        |
+        | repeated RID Lookup
+        v
+fetch/check measureId and retrieve
+providerState,
+lob,
+CYTD,
+PFY,
+compliantCYTD,
+compliantPFY,
+eligibilityDateCYTD,
+eligibilityDatePFY,
+etc.
 
-existing nonclustered index
-        ->
-find 487 candidate rows
-        ->
-perform approximately 487 RID lookups into heap
-        ->
-evaluate additional predicates including measureId
-        ->
-48 rows remain
-
-This suggests the current index may not contain enough columns to completely satisfy the join/filter.
-
-However, the production BETTER plan also contains a RID Lookup.
-
-Therefore:
-
-DO NOT assume that eliminating the RID Lookup is the only goal.
-
-The bigger concern is preventing the production BAD plan from choosing a large heap/table scan.
-
-==================================================
-RELEVANT QUERY JOIN
-==================================================
-
-The query joins attestation_status and hedis_details approximately like:
-
-INNER JOIN hedis_details hd
-    ON atts.measure_id = hd.measureId
-   AND atts.humana_member_id = hd.humanaMemberId
-
-The query also uses columns from hedis_details including approximately:
-
-- measureId
-- humanaMemberId
-- lob
-- providerState
-- eligibilityDateCYTD
-- eligibilityDatePFY
-- compliantCYTD
-- compliantPFY
-
-There are other conditions involving base_event_date and CYTD/PFY.
-
-Locate the exact query in the repository and confirm all columns rather than relying only on this summary.
+This repeated lookup pattern is the primary indexing opportunity we are investigating.
 
 ==================================================
-STATISTICS IO FROM DEV
+7. WHY measureId MATTERS
 ==================================================
 
-Approximate values:
+The HEDIS table is joined using BOTH:
 
-agg_hedis_details:
-Scan count: 49
-Logical reads: 612
+atts.humana_member_id = hd.humanaMemberId
 
-attestation_status:
-Scan count: 1
-Logical reads: 50
+AND
 
-agg_measure_years:
-Scan count: 1
-Logical reads: 3
+atts.measure_id = hd.measureId
 
-The DEV query currently executes very quickly.
+But the current selected index is keyed only on:
 
-Therefore DEV does NOT reproduce the production CPU issue.
+humanaMemberId
 
-The important comparison is:
+Therefore, SQL Server can locate rows for a member but cannot use the same index key to narrow the seek directly to the relevant measure.
 
-PRODUCTION BAD PLAN:
-agg_hedis_details -> Table Scan / Heap Scan
+This suggests that a composite key beginning with:
 
-PRODUCTION BETTER PLAN:
-agg_hedis_details -> Index Seek -> RID Lookup
+humanaMemberId,
+measureId
 
-DEV:
-agg_hedis_details -> Index Seek -> RID Lookup
+may be more appropriate for this query's join access pattern.
+
+This is currently a hypothesis to validate against the repository and execution plan — not an instruction to blindly create it.
 
 ==================================================
-PHYSICAL TABLE ARCHITECTURE
+8. OTHER EXISTING INDEXES DISCOVERED
 ==================================================
 
-The physical HEDIS table appears to have dynamically/versioned names similar to:
+We queried sys.indexes/sys.index_columns/sys.columns and found many existing NONCLUSTERED indexes on the generated HEDIS details table.
+
+Examples include indexes beginning with:
+
+addressId
+division
+market
+pcpGrouperId
+providerTaxId
+provId
+region
+sg1Id
+sg2Id
+sg3Id
+
+Many of these appear to follow a repeating pattern where the first key is the entity dimension, followed by columns such as:
+
+coverageStatus
+lob
+product
+measurementYear
+compliantCYTD
+compliantPFY
+CYTD
+PFY
+
+and similar fields.
+
+There is also:
+
+humanaMemberIdIdx_idx
+
+but unlike many of these larger indexes, the metadata check we performed showed the current humanaMemberId index itself contains only:
+
+humanaMemberId
+
+as its key and no INCLUDE columns.
+
+DO NOT create a redundant index before thoroughly examining all existing index definitions in the repository.
+
+Check whether an existing index already provides the required key ordering or coverage.
+
+==================================================
+9. STATISTICS IO BASELINE
+==================================================
+
+We executed the query with:
+
+SET STATISTICS IO ON;
+
+The query completed successfully.
+
+Development execution time was approximately:
+
+00:00:00.518
+
+The output showed approximately:
+
+HEDIS details table:
+scan count: 49
+logical reads: 612
+
+Other related objects had much smaller read counts.
+
+There were also reads associated with:
+
+attestation_status
+measure_years
+
+and SQL Server worktables/workfiles depending on the plan.
+
+The important point for this task is that the HEDIS details access produced repeated seeks/lookups.
+
+Because this is development, DO NOT make a claim like:
+
+"612 reads caused the production CPU incident."
+
+That has NOT been proven.
+
+The correct conclusion is:
+
+The development actual plan demonstrates a non-covering access path with repeated RID Lookups, and production scale/concurrency may amplify this pattern.
+
+==================================================
+10. CURRENT CANDIDATE INDEX HYPOTHESIS
+==================================================
+
+Based on the execution plan, one candidate we discussed for DEVELOPMENT TESTING was conceptually:
+
+CREATE NONCLUSTERED INDEX IX_hedis_details_member_measure
+ON <correct HEDIS details table>
+(
+    humanaMemberId,
+    measureId
+)
+INCLUDE
+(
+    eligibilityDateCYTD,
+    eligibilityDatePFY,
+    CYTD,
+    PFY,
+    compliantCYTD,
+    compliantPFY,
+    lob,
+    providerState
+);
+
+This is NOT an approved final implementation.
+
+It is a hypothesis intended to accomplish two things:
+
+1. Allow SQL Server to seek/narrow using both join columns:
+
+   humanaMemberId
+   measureId
+
+2. Cover the other HEDIS columns required by this query so that the RID Lookup can potentially disappear.
+
+You must validate whether this is appropriate after inspecting:
+- repository conventions,
+- existing indexes,
+- generated table lifecycle,
+- index size/write cost,
+- actual query usage,
+- SQL Server limitations/conventions in this project.
+
+Also determine whether isOnshoreOnly needs consideration because the query contains:
+
+(@P1 IS NULL OR hd.isOnshoreOnly = @P2)
+
+In our current reproduction @P1 is NULL, so that predicate does not narrow the data. Do NOT automatically add isOnshoreOnly to the index just because it appears in the SQL.
+
+==================================================
+11. IMPORTANT INDEX DESIGN PRINCIPLE
+==================================================
+
+Do not simply put every referenced column into the INDEX KEY.
+
+We specifically want you to reason about:
+
+KEY columns versus INCLUDE columns.
+
+Likely key candidates are equality/join columns such as:
+
+humanaMemberId
+measureId
+
+Other columns may be better INCLUDE candidates because they are needed to evaluate/output the query but may not be useful for navigating the B-tree.
+
+However, inspect the complete workload/repository before deciding.
+
+We want to avoid:
+- excessively wide index keys,
+- unnecessary duplicate indexes,
+- indexes with high storage/write overhead,
+- creating a specialized index that conflicts with existing project conventions.
+
+==================================================
+12. GENERATED TABLE CONCERN
+==================================================
+
+This is especially important.
+
+The table observed in development is named:
 
 agg_hedis_details_1_68_528_20260916_78351f4_1018
 
-The SQL itself references:
+This strongly suggests that the physical table may be generated dynamically/versioned as part of the application's data pipeline.
 
-hedis_details
+Therefore, simply writing:
 
-Please investigate how hedis_details maps to the physical agg_hedis_details table.
+CREATE INDEX ...
+ON agg_hedis_details_1_68_528_20260916_78351f4_1018
 
-Determine whether it is:
+would likely be incorrect as a permanent solution.
 
-- synonym
-- view
-- generated physical table
-- dynamically swapped table
-- deployment-created table
-- aggregator-created table
-- another mechanism
+Search the repository for:
 
-This is important because any index solution must be added wherever these physical tables are created.
-
-Do NOT suggest manually indexing only one generated DEV table if that table will later be replaced.
-
-==================================================
-EXISTING INDEXES
-==================================================
-
-The production screenshot shows several existing nonclustered indexes on agg_hedis_details.
-
-Names visible include approximately:
-
-addressIdIdx_idx
-attestationIdx_idx
-divisionIdx_idx
+agg_hedis_details
 humanaMemberIdIdx_idx
+addressIdIdx_idx
+divisionIdx_idx
 marketIdx_idx
-memberGenKeyIdx_idx
-pcpGroupIdIdx_idx
+pcpGrouperIdIdx_idx
 providerTaxIdIdx_idx
-providerIdIdx_idx
+provIdIdx_idx
 regionIdx_idx
 sg1IdIdx_idx
 sg2IdIdx_idx
 sg3IdIdx_idx
 
-There is already an index related to humanaMemberId.
+Also search for patterns such as:
 
-The DEV execution plan appears to seek through an existing index and then perform the RID Lookup.
-
-I need you to find the exact definition of the index being used.
-
-Determine:
-
-- index name
-- key columns
-- key column order
-- INCLUDE columns
-- whether it is filtered
-- whether it is unique
-- whether measureId is already included
-- whether lob/providerState/status are already indexed elsewhere
-- whether another existing index substantially overlaps the proposed solution
-
-==================================================
-WHAT TO SEARCH FOR IN THE REPOSITORY
-==================================================
-
-Search for:
-
-hedis_details
-agg_hedis_details
-humanaMemberIdIdx
-measureId
-humanaMemberId
-providerState
-lob
 CREATE INDEX
-CREATE TABLE
-CREATE SYNONYM
-DROP SYNONYM
-Liquibase
-index creation
-table generation
+CREATE NONCLUSTERED INDEX
+createIndex
+Liquibase createIndex
+indexName
+humanaMemberId
+hedis_details
 
-Also inspect Spark/Scala or SQL-generation code if that is where the physical agg_hedis_details tables are created.
+Determine exactly where these indexes are generated.
+
+==================================================
+13. YOUR FIRST TASK: REPOSITORY INVESTIGATION
+==================================================
+
+Before changing anything, investigate the repository.
 
 Find:
 
-1. Where the physical agg_hedis_details table is created.
-2. Where its indexes are created.
-3. How hedis_details points to the current physical table.
-4. How humanaMemberIdIdx is currently defined.
-5. Whether indexes are recreated every time a new physical table is generated.
-6. The correct repository location where a permanent indexing change should be implemented.
+A. Where the query comes from.
 
-==================================================
-INDEXES I WANT YOU TO EVALUATE
-==================================================
+Search using distinctive fragments such as:
 
-Based on the evidence, evaluate possible approaches such as:
+toBeReviewedMedicaid
+toBeReviewedMedicare
+toBeReviewedMedicareFlorida
+toBeReviewedMedicaidFlorida
 
-Candidate A:
+and/or:
 
-(humanaMemberId, measureId)
-
-Candidate B:
-
-(measureId, humanaMemberId)
-
-Candidate C:
-
-One of the above with INCLUDE columns required by the query.
-
-Potential INCLUDE columns may include:
-
-lob
-providerState
+attestation_status
 eligibilityDateCYTD
 eligibilityDatePFY
 compliantCYTD
 compliantPFY
 
-These are only candidates.
+Tell me:
+- file path
+- class/repository/DAO name
+- method name
+- whether SQL is native SQL, JPA, Hibernate-generated, stored procedure, etc.
 
-Do not automatically include all of them.
+B. Where agg_hedis_details tables are created.
 
-Also evaluate the production incident recommendation involving:
+Determine:
+- whether these tables are generated dynamically,
+- what component generates their names,
+- when they are created/dropped,
+- how their schema is defined.
 
-measureId
-lob
-providerState
-status
+C. Where their indexes are created.
 
-Determine whether these should actually be:
+Find the exact code/script responsible for indexes such as:
 
-- key columns
-- INCLUDE columns
-- separate indexes
-- part of an existing index
-- or not necessary at all
+humanaMemberIdIdx_idx
 
-==================================================
-WHAT I WANT FROM YOU
-==================================================
+Tell me:
+- file path
+- relevant method/script
+- lifecycle of index creation
+- whether indexes are recreated whenever a new agg_hedis_details table is generated.
 
-After inspecting the repository, give me:
+D. Examine all existing indexes.
 
-1. The exact file(s) responsible for creating the agg_hedis_details indexes.
+Determine whether an existing index already begins with or contains:
 
-2. The current relevant index definitions.
+(humanaMemberId, measureId)
 
-3. Which existing index the DEV Index Seek is most likely using.
+or otherwise covers this query.
 
-4. Why the RID Lookup is occurring.
+Do not rely only on index names.
 
-5. Whether the current humanaMemberId index should be modified or whether a new index should be created.
+Inspect actual definitions.
 
-6. Your recommended index:
-   - exact key columns
-   - correct column order
-   - INCLUDE columns
-   - reasoning
+E. Determine the safest place to implement the new index.
 
-7. Explain how the proposed index would affect:
+For example, it may belong in:
+- dynamic table-generation code,
+- a SQL template,
+- Liquibase,
+- a stored procedure,
+- data-management code,
+- or another location.
 
-   Index Seek
-   RID Lookup
-   Rows Read
-   Logical Reads
-   likelihood of Table Scan
-
-8. Check for duplicate/redundant indexes before recommending a new one.
-
-9. Explain the storage/write overhead of the proposed index.
-
-10. Give me the exact implementation code required in this repository.
-
-For example, if the index is generated through Scala/SQL/Liquibase, show me the exact code change in the correct place rather than only giving me an isolated:
-
-CREATE INDEX ...
-
-11. Also provide a standalone CREATE INDEX statement I can use for testing in DEV.
-
-12. Give me a BEFORE vs AFTER validation procedure using:
-
-SET STATISTICS IO ON;
-SET STATISTICS TIME ON;
-
-and the actual execution plan.
-
-I want to compare:
-
-- logical reads
-- rows read
-- rows returned
-- RID Lookup executions
-- whether RID Lookup disappears/reduces
-- Index Seek behavior
-- estimated vs actual rows
-- whether a Table Scan appears
-- execution time
+Use repository evidence to decide.
 
 ==================================================
-IMPORTANT CONSTRAINTS
+14. ANALYSIS I WANT BEFORE CODE CHANGES
 ==================================================
 
-For now:
+After inspecting the repository, STOP and report:
 
-DO NOT rewrite the SQL query.
+1. Where the problematic query lives.
 
-DO NOT optimize CASE expressions.
+2. Where the HEDIS details table is created.
 
-DO NOT change business logic.
+3. Where humanaMemberIdIdx_idx is created.
 
-DO NOT modify files yet.
+4. Whether the physical HEDIS table name is dynamically generated.
 
-DO NOT run CREATE INDEX against any database.
+5. The complete definition of the existing humanaMemberId index according to the code.
 
-First inspect everything and give me your indexing recommendation and exact proposed code.
+6. Any existing index that overlaps with the proposed index.
 
-Clearly separate:
+7. Why the current index leads to the observed access pattern.
 
-CONFIRMED FROM REPOSITORY/PLAN
+8. Whether you agree that:
 
-from:
+   KEY:
+       humanaMemberId,
+       measureId
 
-HYPOTHESIS / RECOMMENDATION
+   INCLUDE:
+       eligibilityDateCYTD,
+       eligibilityDatePFY,
+       CYTD,
+       PFY,
+       compliantCYTD,
+       compliantPFY,
+       lob,
+       providerState
 
-Do not call something the root cause unless we have evidence.
+   is a reasonable candidate.
 
-Start by locating the query, physical table-generation logic, and current index definitions.
+9. If you disagree, propose a better index and explain specifically why.
+
+10. Any risks:
+    - index width
+    - storage
+    - insert/update overhead
+    - duplicate indexes
+    - generated-table lifecycle
+    - deployment implications
+    - differences between development and production cardinality
+
+DO NOT modify code yet.
+
+==================================================
+15. AFTER I APPROVE THE ANALYSIS
+==================================================
+
+Only after I approve your recommendation, implement the smallest appropriate change.
+
+Requirements:
+
+- Follow existing repository conventions.
+- Do not hardcode a development-generated physical table name.
+- Do not modify the SQL query.
+- Do not make unrelated formatting/refactoring changes.
+- Preserve existing indexes unless there is strong evidence one should be modified instead.
+- Prefer a narrowly scoped change.
+- If indexes are dynamically created for every generated HEDIS table, modify that mechanism appropriately.
+- Add/update tests if the repository has tests around generated table/index creation.
+- If Liquibase is the correct mechanism, follow the project's existing Liquibase conventions.
+
+After implementation show me:
+
+1. Files changed.
+2. Exact diff.
+3. Why each change is necessary.
+4. The resulting SQL/index definition.
+5. How the change applies to newly generated HEDIS tables.
+6. Whether existing already-generated tables require a separate migration/action.
+7. Rollback/drop-index SQL or the repository-appropriate rollback mechanism.
+
+==================================================
+16. VALIDATION PLAN
+==================================================
+
+Also give me a concrete validation plan.
+
+I want to compare BEFORE vs AFTER using the exact same query and parameters.
+
+Baseline currently observed in development:
+
+HEDIS table logical reads: approximately 612
+Index Seek executions: 49
+RID Lookup executions: 487
+RID Lookup rows read: 487
+RID Lookup rows returned: 48
+query runtime: approximately 518 ms
+
+After the index change, we should check:
+
+- Which index SQL Server chooses.
+- Whether the RID Lookup disappears.
+- Whether the seek uses BOTH humanaMemberId and measureId.
+- Number of logical reads.
+- CPU time.
+- Elapsed time.
+- Rows read vs rows returned.
+- Actual vs estimated row counts.
+- Whether a new expensive operator appears elsewhere.
+
+Do NOT declare success solely because runtime improves once.
+
+The strongest evidence would be:
+- new index selected,
+- RID Lookup removed/reduced,
+- fewer logical reads,
+- comparable query results,
+- repeated executions showing improvement.
+
+Also provide SQL commands I can use to verify the index metadata after deployment.
+
+==================================================
+17. CORRECTNESS REQUIREMENT
+==================================================
+
+Performance changes must NOT change query results.
+
+Before and after the indexing change, the four output values must remain identical:
+
+toBeReviewedMedicaid
+toBeReviewedMedicare
+toBeReviewedMedicareFlorida
+toBeReviewedMedicaidFlorida
+
+An index should not change semantics.
+
+==================================================
+18. SCOPE CONTROL
+==================================================
+
+Do NOT currently:
+
+- rewrite the RANK() logic,
+- replace RANK() with ROW_NUMBER(),
+- rewrite the OR predicates,
+- modify NULL comparison logic,
+- change joins,
+- change GROUP BY,
+- change SUM(CASE),
+- change parameter handling,
+- introduce query hints,
+- force an index,
+- optimize attestation_status,
+- redesign the table,
+- add a clustered index,
+- change application behavior.
+
+Those may be investigated later.
+
+For now the task is:
+
+Understand and fix the HEDIS-details indexing/access-path problem with the smallest safe repository change.
+
+==================================================
+19. START NOW
+==================================================
+
+Start by exploring the repository.
+
+Do not edit anything yet.
+
+First give me:
+
+1. Relevant files you found.
+2. How the query maps to the code.
+3. How agg_hedis_details tables and their indexes are generated.
+4. Existing relevant index definitions.
+5. Your recommended index change.
+6. Why it should reduce/eliminate the observed RID Lookup.
+7. Risks/tradeoffs.
+8. Exact files you would modify after I approve.
+
+Use actual repository evidence in your answer and cite file paths and line numbers where possible.
