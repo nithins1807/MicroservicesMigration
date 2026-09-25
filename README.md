@@ -1,38 +1,49 @@
-Good. Before doing any performance or indexing analysis, investigate one discrepancy.
+Now inspect the existing index definitions for hedis_details / agg_hedis_details in detail.
 
-The native SQL you found references:
+Do not analyze query performance yet and do not modify anything.
 
-hedis_details
+Focus on:
 
-However, the actual SQL Server execution plan for this same query shows SQL Server accessing a physical object named similar to:
+aggregator/src/main/scala/com/tsi/aggregator/hedisdetail/HedisDetailReport.scala
 
-agg_hedis_details_1_68_528_20260916_78351f4_1018
+and the createIndex implementation it calls.
 
-I need to understand the relationship between these two.
+For every index created for agg_hedis_details, give me:
 
-Search all available repositories/code and determine:
+1. Index name
+2. Whether it is clustered or nonclustered
+3. Whether it is unique
+4. Key columns IN ORDER
+5. INCLUDE columns, if any
 
-1. What exactly is `hedis_details` in the application/database:
-   - physical table
-   - view
-   - synonym
-   - dynamically created object
-   - or something else.
+Pay particular attention to:
 
-2. What `agg_hedis_details_*` represents and where those generated/versioned tables come from.
+- humanaMemberIdIdx_idx
+- any index containing humanaMemberId
+- any index containing measureId
+- any index containing both humanaMemberId and measureId
+- the attestation-related composite index you mentioned
 
-3. How a query written against `hedis_details` ends up accessing `agg_hedis_details_*` in the SQL Server execution plan.
+For humanaMemberIdIdx_idx specifically, show me the exact createIndex call from the source and explain what arguments are passed as key columns vs INCLUDE columns.
 
-4. Whether there is code/scripts responsible for creating, switching, renaming, aliasing, or referencing these generated tables.
+Also show me the implementation/signature of createIndex() so we can verify how those arguments translate into the generated SQL Server CREATE INDEX statement.
 
-5. Where indexes for `agg_hedis_details_*` are defined or created, if that information exists in the available repositories.
+Finally, tell me whether ANY existing index could cover this access pattern:
 
-Search all repositories available locally, not just acuity-ui.
+JOIN:
+attestation_status.humana_member_id = hd.humanaMemberId
+attestation_status.measure_id = hd.measureId
 
-Give me exact file paths, methods/scripts and relevant code references for anything you find.
+with the query also requiring:
+eligibilityDateCYTD
+eligibilityDatePFY
+CYTD
+PFY
+compliantCYTD
+compliantPFY
+lob
+providerState
 
-If the relationship cannot be established from these repositories, explicitly say what is missing rather than assuming.
-
-Do not modify anything.
 Do not recommend a new index yet.
-Do not optimize the SQL yet.
+Do not change code.
+Just report the exact existing index definitions and whether an existing index already contains these columns.
