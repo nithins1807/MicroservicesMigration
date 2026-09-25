@@ -1,17 +1,33 @@
-We now have sufficient cardinality evidence for the candidate key order. Proceed with candidate index design.
-Use (humanaMemberId, measureId) as the proposed key order based on the measured dev cardinality:
-- total rows = 8,707
-- distinct humanaMemberId = 1,049 (~8.3 rows/value)
-- distinct measureId = 94 (~92.6 rows/value)
-- distinct (humanaMemberId, measureId) = 8,441 (~1.03 rows/pair)
-Now determine the minimum justified INCLUDE list specifically for fixing the RID Lookup / CPU issue in this query.
-Use the query, actual execution-plan evidence, RID Lookup output/predicate columns, and existing indexes already investigated.
-Please:
-1. Separate columns into KEY, INCLUDE, and not needed.
-2. Explain why each INCLUDE column is necessary.
-3. Prefer the narrowest index that materially reduces/eliminates the expensive RID Lookup; do not blindly include every SELECT/output column.
-4. Check whether any existing index can be modified/reused instead of creating a redundant new index.
-5. Consider index width and write/storage overhead.
-6. Give me the proposed CREATE NONCLUSTERED INDEX SQL, but label it candidate only — do not apply yet.
-7. Tell me exactly how to validate it in dev using the actual execution plan and SET STATISTICS IO, TIME ON, including what before/after metrics I should capture.
-Do not optimize/rewrite the SQL yet. The scope remains indexing only.
+We have now identified a candidate index based on the execution plan and cardinality analysis. Before proceeding further, I want to determine whether this proposed solution will actually address the performance issue.
+For now, ignore production deployment completely. Focus only on validating the technical solution and determining the correct implementation in this repository.
+Please do the following:
+1. Reassess the proposed index against the original performance problem and execution-plan evidence. Explain specifically what behavior we expect it to change:
+   - current Index Seek on humanaMemberIdIdx_idx
+   - ~487 rows being passed to the RID Lookup
+   - repeated RID Lookup executions against the hedis_details heap
+   - residual filtering reducing the rows afterward
+   - logical reads / CPU associated with those lookups
+2. Tell me what evidence would prove or disprove that the candidate index solves this issue. Do not assume that simply creating or using the index means the problem is solved.
+3. Before writing any code, inspect the repository and identify exactly how indexes for agg_hedis_details_* are currently created. We already found relevant implementation around:
+   - HedisDetailReport.scala
+   - DataFrameSQLWriterComponent.scala
+   - existing createIndex(...) usage
+   - existing humanaMemberIdIdx
+4. Determine whether the existing humanaMemberIdIdx implementation should be modified/extended or whether another index is actually justified. Avoid creating a redundant index unless there is a clear technical reason.
+5. If you propose a code change, follow the existing repository implementation and coding style. Reuse the existing index creation mechanism, naming conventions, constants, helper methods, and patterns already used by the aggregator. Do not introduce a new indexing mechanism if the repository already provides one.
+6. Show me the minimal code change/diff that would implement the candidate solution using the existing pattern. Do not modify the SQL query; this task is indexing only.
+7. Then give me a DEV validation procedure for the code change. I want a before/after comparison using the exact same query and parameters. Compare:
+   - execution-plan shape
+   - index selected by SQL Server
+   - Index Seek actual/estimated rows
+   - RID Lookup presence and execution count
+   - logical reads for agg_hedis_details_*
+   - CPU time
+   - elapsed time
+   - query results/correctness
+8. Define the expected successful outcome. For example, if the index is working as intended, tell me specifically what I should expect to see happen to the current RID Lookup and the ~487-row access pattern.
+Do not make changes yet. First inspect the existing implementation and show me:
+(a) whether the candidate index is still technically justified,
+(b) which existing code should change,
+(c) the proposed minimal diff, and
+(d) exactly how we will prove the change solves the issue.
