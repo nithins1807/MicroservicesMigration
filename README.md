@@ -1,93 +1,53 @@
-Now analyze the SQL Server execution-plan behavior for this query using everything you have established from the repository.
+Good. Do not recommend an index yet.
 
-Do NOT modify code and do NOT recommend or create a new index yet.
+Before we design any index, I want to verify the exact execution-plan tree and RID Lookup behavior.
 
-I captured the actual execution plan in the development database for the same query.
+From everything established so far, we know:
 
-Important observations from the actual plan:
+- humanaMemberIdIdx_idx has only humanaMemberId as its key and no INCLUDE columns.
+- The Index Seek executes 49 times.
+- The Index Seek reads/returns 487 rows total.
+- The query needs many additional hd columns.
+- The execution plan contains a RID Lookup against the same agg_hedis_details_* heap.
+- STATISTICS IO reports scan count 49 and 612 logical reads for agg_hedis_details_*.
 
-1. SQL Server resolves hedis_details to the generated physical agg_hedis_details_* table.
+I now need you to tell me exactly what information I should collect from the SQL Server execution plan to prove the remaining behavior.
 
-2. One operator is:
+Specifically, tell me how to inspect and report:
 
-   Index Seek
-   Index: humanaMemberIdIdx_idx
-   Table: agg_hedis_details_1_68_528_20260916_78351f4_1018
+1. The RID Lookup operator:
+   - Actual Number of Rows
+   - Number of Rows Read
+   - Number of Executions
+   - Estimated Number of Rows
+   - Estimated Number of Executions, if available
+   - Output List
+   - Predicate
+   - Seek/Probe information if present
+   - Actual I/O Statistics if available
 
-   Actual Number of Rows for All Executions: 487
-   Number of Rows Read: 487
-   Number of Executions: 49
-
-   Estimated Number of Rows Per Execution: ~7.51639
-   Estimated Number of Rows for All Executions: ~389.984
-
-   Seek predicate:
-   hd.humanaMemberId = attestation_status.humana_member_id
-
-3. We also observed a RID Lookup against the same agg_hedis_details physical table in the execution plan.
-
-4. SET STATISTICS IO showed approximately:
-
-   agg_hedis_details...:
-       Scan count: 49
-       logical reads: 612
-
-   attestation_status:
-       Scan count: 1
-       logical reads: 39
-
-   measure_years:
-       Scan count: 1
-       logical reads: 3
-
-   Total execution time was approximately 518 ms in this development run.
-
-5. From the repository investigation, we now know:
-
-   humanaMemberIdIdx_idx:
-       key = humanaMemberId
-       INCLUDE = none
-
-   attestationIdx_idx keys:
-       measurementYear,
-       lob,
-       measureId,
-       humanaMemberId,
-       eligibilityDateCYTD,
-       eligibilityDatePFY,
-       eligibilityDatePPFY
-
-   INCLUDE = none
-
-The production incident involves high CPU/resource utilization from this query, but this execution was performed against development data, so do NOT assume the development row counts or 518 ms runtime represent production scale.
-
-Analyze specifically:
-
-1. Why is SQL Server choosing humanaMemberIdIdx_idx for this part of the plan?
-
-2. Explain what the 49 executions mean in the context of the join.
-
-3. Why can an Index Seek still be followed by a RID Lookup?
-
-4. Based on the actual query, identify exactly which hd columns are unavailable from humanaMemberIdIdx_idx and therefore may require access back to the base row.
-
-5. Explain how the combination:
-
+2. The Nested Loops operator immediately associated with:
    Index Seek -> RID Lookup
 
-   behaves for this query.
+   I need:
+   - Logical Operation
+   - Actual Number of Rows
+   - Number of Executions
+   - Estimated Number of Rows
+   - Outer References
+   - Predicate
+   - With Ordered Prefetch / Optimized properties, if present
 
-6. Determine whether the execution-plan evidence is consistent with the repository index definitions we just inspected.
+3. The next Nested Loops / join operator above that subtree that connects this hd access to attestation_status / measure_years.
 
-7. Explain whether the ~612 logical reads on agg_hedis_details are plausibly connected to the repeated seeks/lookups, but do not claim causation unless the plan proves it.
+4. The operator feeding the 49 executions into the humanaMemberId Index Seek. I want to determine exactly what produces those 49 values.
 
-8. Identify any evidence in the plan that suggests repeated row-by-row access caused by a Nested Loops join. If the provided observations are insufficient to prove that, explicitly say what execution-plan operator/properties I need to inspect next.
+Do NOT analyze or redesign the query yet.
 
-9. Distinguish clearly between:
-   - facts proven by the execution plan
-   - reasonable interpretations
-   - things we still need to verify
+Do NOT recommend CREATE INDEX yet.
 
-Do not propose the final index yet.
+Give me a short checklist of exactly which operators I should click in the graphical execution plan and which properties I should screenshot/copy for you.
 
-The purpose of this step is to understand exactly WHY the current index access pattern may be expensive before deciding what index change should be made.
+Also tell me which side of each Nested Loops operator is the outer input and which is the inner input based on the graphical plan, so I know what to capture.
+
+The goal of this step is evidence collection only. After I provide those properties, we will determine exactly how many RID Lookups occur and which columns/predicates force those lookups.
