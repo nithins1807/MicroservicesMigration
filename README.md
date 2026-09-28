@@ -1,17 +1,21 @@
-The proposed solution and validation criteria are clear. Proceed to the implementation/validation stage
-Make the minimal repository code change you proposed to the existing humanaMemberIdIdx creation in HedisDetailReport.scala, using the existing createIndex(...) implementation and existing repository coding style.
-Requirements:
-- Modify only what is necessary for this indexing change.
-- Do not modify or optimize the SQL query.
-- Do not introduce a new indexing mechanism or helper.
-- Do not create a redundant second permanent index.
-- Do not make unrelated formatting/refactoring changes.
-- Do not commit, push, or create a PR.
-Before editing, verify the exact createIndex method signature and confirm that the proposed keyColumns and includeColumns strings will generate the intended SQL.
-Then make the change and show me the exact git diff.
-After the change, inspect the diff for correctness and tell me exactly how I should run/regenerate the agg_hedis_details_* table in DEV using the existing project workflow so the modified index is actually created.
-Also give me the exact SQL I should run to verify that the newly generated humanaMemberIdIdx_idx has:
-- KEY 1: humanaMemberId
-- KEY 2: measureId
-- the expected INCLUDE columns
-After that, stop. Do not assume the performance issue is fixed. I will rerun the same reporting query and provide the new actual execution plan and STATISTICS IO/TIME results for comparison.
+Before I validate this change, I want to challenge the 10 INCLUDE columns. The composite key (humanaMemberId, measureId) is supported by our cardinality analysis, but adding 10 INCLUDE columns makes this a much wider index.
+
+Reassess whether we actually need all 10 INCLUDE columns to solve the original performance problem.
+
+Separate the benefit of:
+
+1. changing the key from (humanaMemberId) to (humanaMemberId, measureId), and
+2. adding the INCLUDE columns to eliminate the remaining RID Lookup.
+
+I want the minimum index change that materially addresses the observed CPU/read problem, not necessarily an index that covers every column used by the query.
+
+Using the actual execution plan and repository query we already inspected, determine:
+
+* What improvement should we expect from (humanaMemberId, measureId) with no INCLUDE columns?
+* Would that alone reduce the ~487 rows currently reaching the RID Lookup to roughly ~48–55?
+* If the RID Lookup remains, approximately how many executions/rows should remain?
+* Which INCLUDE columns, if any, are actually necessary to materially improve performance beyond the composite key?
+* Can we test this incrementally: first composite key only, then add INCLUDE columns only if the measurements justify them?
+* For each INCLUDE column, classify it as required, potentially beneficial, or unnecessary for the original performance issue, and explain why.
+
+Do not modify the code yet. Recommend the narrowest candidate index we should validate first.
