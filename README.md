@@ -1,179 +1,144 @@
 
-I'm working on ADO Story 9553018: Optimize the SQL Hedis_Details statement.
+I'm investigating the CYTD/PFY selection logic for ADO Story 9553018 before implementing David's optimized Nurse Review KPI query.
 
-I have two SQL implementations:
+ANALYSIS ONLY. Do not modify any files or execute database queries.
 
-1. ORIGINAL QUERY:
-Already present in NurseReviewMeasureDropDownRepository.java.
-java/com/transcendinginsights/acuity/nursereview/repository/NurseReviewMeasureDropDownRepository.java
+I have confirmed the following information.
 
-3. OPTIMIZED QUERY:
-David (our architect) provided an optimized SQL query.
-src/main/resources/test_data/optimized.sql
+EXISTING DATABASE MAPPING
 
-IMPORTANT:
-David and I already executed and compared the original and optimized SQL against production data. All five bucket counts matched.
+The measure_years table currently contains:
 
-The optimization approach is approved. Do not redesign the SQL or suggest alternative performance optimizations.
+measurementYear | month | abbr
+2026            | 10    | CYTD
+2025            | 05    | PFY
+2024            | 04    | PPFY
 
-My task is to integrate and refactor David's optimized query into our existing Spring Boot application.
+These are actual database values, not assumptions.
 
-FIRST, ANALYZE THE REPOSITORY.
-DO NOT MODIFY ANY FILES YET.
+APPLICATION YAML
 
-DAVID'S IMPLEMENTATION REQUIREMENTS
+nurseReviewFlipMonth: '04'
+nurseReviewFlipDay: '01'
 
-1. Reusable SQL generation
+So the configured Nurse Review flip month/day is April 1.
 
-Currently, the optimized query repeats nearly identical SQL five times for:
+CURRENT SQL
 
-- Medicaid
-- Medicare
-- Florida Medicare
-- Florida Medicaid
-- CarePlus
+The original query in NurseReviewMeasureDropDownRepository joins measure_years on:
 
-David recommended creating one reusable Java function/template to generate each bucket-specific query.
+my.measurementYear = atts.measure_year
 
-The SQL structure remains the same. Only certain conditions vary.
+It selects:
 
-2. Dynamic conditions
+CYTD:
+my.abbr = 'CYTD'
+AND CYTD = 'Y'
+AND compliantCYTD = 'N'
+AND the CYTD eligibility-date condition
 
-The reusable query must support:
+PFY:
+my.abbr = 'PFY'
+AND PFY = 'Y'
+AND compliantPFY = 'N'
+AND the PFY eligibility-date condition
 
-- measureYear: existing runtime parameter
-- isOnshore: existing nullable runtime parameter
-- LOB: Medicare or Medicaid
-- State: Florida, non-Florida, or unrestricted when applicable
-- Contract: NULL/N versus Y for CarePlus
-- Period: CYTD or PFY
+There is no PPFY branch in the original query.
 
-Use the exact predicates from the approved optimized SQL as the reference.
+DAVID'S RECOMMENDATION
 
-3. CYTD/PFY handling
+David wants Java to decide whether the optimized SQL uses CYTD or PFY, removing the measure_years join.
 
-David recommended determining CYTD/PFY in Java instead of using the original SQL OR conditions and measure_years join.
+His proposed CYTD rule was:
 
-His suggested rule:
+measureYear == calendarYear
 
-Use CYTD when:
-CYTD = 'Y' and compliantCYTD = 'N'
-CYTD when MeasureYear = calendar year
+OR
 
-- Requested measure year equals the current calendar year.
-- OR the current date is within the configured Nurse Review flip-date window for the requested measure year.
+measureYear != calendarYear
+AND currentDate <= constructed Nurse Review flip date
 
-Otherwise, use PFY for applicable previous-year requests.
-PFY = 'Y' and compliantPFY = 'N'
-MeasureYear != Calendar Year and currentDate <= measureYear + nurseReviewFlipMonth + nurseReviewFlipDay
+The exact year used to construct that flip date needs verification.
 
-The application has nurseReviewFlipMonth and nurseReviewFlipDay configuration properties in YAML.
+The selected period determines which columns the SQL generator uses:
 
-Inspect their actual definitions and any existing utilities that already implement measurement-year or flip-date logic.
+CYTD:
+CYTD, compliantCYTD, eligibilityDateCYTD
 
-Determine how to implement this rule correctly using existing application conventions.
+PFY:
+PFY, compliantPFY, eligibilityDatePFY
 
-CYTD SQL uses:
-- CYTD
-- compliantCYTD
-- eligibilityDateCYTD
+YOUR TASK
 
-PFY SQL uses:
-- PFY
-- compliantPFY
-- eligibilityDatePFY
+1. Inspect NurseReviewUtils, especially:
+   - getCurrentNurseReviewMeasureYear()
+   - getNurseReviewFlipDate()
+   - Related date/year utilities
 
-Preserve the original contract-column behavior.
+2. Inspect NurseReviewService and the controller to determine exactly how the requested measureYear is calculated and passed to the KPI repository.
 
-Do not hardcode years such as 2025 or 2026.
+3. Inspect UI configuration and application.yaml to determine how the April 1 flip is applied.
 
-4. Query generation and execution
+4. Investigate how measure_years is populated or updated, if that logic exists in the repository.
 
-Generate the five bucket-specific COUNT queries using the reusable template.
+5. Determine whether measure_years.abbr is a static mapping or updated as part of the annual measurement-year rollover.
 
-Combine them using UNION ALL.
+6. Determine what the month column represents. Do not assume it is the Nurse Review flip month.
 
-Execute the combined SQL as one database call, using the existing project's database-access conventions.
+7. Explain the relationship between:
+   - Calendar year
+   - Requested measureYear
+   - Active Nurse Review measurement year
+   - measure_years.abbr
+   - April 1 flip date
 
-Do not create five separate database calls.
+8. Explain whether Java can reliably replace the measure_years.abbr lookup using existing application logic.
 
-Use bound parameters for values and fixed, allowlisted SQL fragments for dynamic column names and conditions.
+9. Explain what should happen for PPFY (2024 in the current table). The original SQL does not process PPFY, so do not automatically map unsupported years to PFY.
 
-5. Output format
+10. Determine the appropriate year for constructing the flip date:
+    - requested measureYear
+    - requested measureYear + 1
+    - current calendar year
+    - or another existing application rule
 
-The original query returns one row with these five columns, in this order:
+TEST SCENARIOS
 
-- toBeReviewedMedicaid
-- toBeReviewedMedicare
-- toBeReviewedMedicareFlorida
-- toBeReviewedMedicaidFlorida
-- toBeReviewedCarePlus
+Using the actual April 1 configuration, provide a decision table for:
 
-My optimized SQL already contains an outer COALESCE(MAX(CASE...)) wrapper to preserve this output.
+A. November 2, 2026, requested measureYear 2026
+B. November 2, 2026, requested measureYear 2025
+C. November 2, 2026, requested measureYear 2024
+D. January 15, 2027, requested measureYear 2026
+E. March 31, 2027, requested measureYear 2026
+F. April 1, 2027, requested measureYear 2026
+G. April 2, 2027, requested measureYear 2026
+H. April 2, 2027, requested measureYear 2027
 
-Retain that approach unless an existing project pattern provides an equally simple compatible implementation.
+For each scenario, explain:
+- Active Nurse Review measurement year
+- Expected CYTD, PFY, PPFY, or unsupported behavior
+- Whether the result is established by code/database evidence or requires confirmation
 
-Preserve NurseReviewTotalCount and the existing Java/API response mapping.
+Do not assume the current measure_years snapshot proves its future values.
 
-No Angular changes should be required.
+IMPORTANT
 
-6. Preserve existing functionality
+We are not redesigning the SQL.
 
-Do not change:
-- RANK() semantics
-- Existing attestation filtering
-- HEDIS eligibility-date matching
-- Bucket-specific predicates
-- isOnshore null/0/1 behavior
-- Existing business logic
+The optimized SQL has already been validated with David for production counts.
 
-David's optimized query is the approved SQL reference.
+Our only goal here is to determine the correct Java period-selection logic for generating the five bucket queries.
 
-The goal is to remove duplicated SQL and make its varying predicates configurable, not rewrite the calculations.
+OUTPUT
 
-7. Minimal application changes
+1. Simple explanation of the current logic.
+2. Decision table with the scenarios above.
+3. Exact reusable Java methods and configuration.
+4. Whether David's proposed logic matches the existing application.
+5. Any remaining ambiguity requiring David's confirmation.
 
-Inspect:
-- NurseReviewMeasureDropDownRepository.java
-- NurseReviewService.java
-- NurseReviewTotalCount
-- NurseReviewUtils.setKpiItems()
-- Related configuration classes/YAML
-- Existing dynamic SQL and repository implementations
-- Callers of the current KPI-count method
+Provide file paths and line numbers.
 
-David specifically warned that other application code might reuse the existing query. Check all usages before recommending changes.
-
-Prefer the smallest maintainable implementation following existing project conventions.
-
-Do not introduce unnecessary dependencies, generic frameworks, unrelated refactoring, or Angular changes.
-
-YOUR TASK FOR NOW
-
-Analyze the code and provide:
-
-1. Current implementation flow.
-2. Whether the optimized SQL can be implemented using the existing repository pattern or needs a custom repository.
-3. Recommended reusable query-builder structure.
-4. How each of the five bucket variations will be generated.
-5. How CYTD/PFY will be selected using existing configuration.
-6. How measureYear and isOnshore will be passed.
-7. How the five generated queries will be combined and executed once.
-8. How the original five-column response will be preserved.
-9. Exact files and methods requiring changes.
-10. A short, practical implementation sequence and relevant tests.
-
-Keep your response focused on integration and code rework.
-
-Do not:
-- Modify code yet.
-- Rewrite or further optimize David's SQL.
-- Add indexes or modify database schemas.
-- Change unrelated code.
-- Execute database queries.
-- Commit changes.
-
-
-Provide a concise implementation plan with specific file paths and methods.
-
-Wait for my approval before making changes.
+Do not modify code.
+Do not implement anything yet.
