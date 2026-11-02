@@ -1,125 +1,179 @@
 
-I'm working on ADO Story 9553018:
-"Optimize the SQL Hedis_Details SQL statement to make it more performant."
+I'm working on ADO Story 9553018: Optimize the SQL Hedis_Details statement.
 
-I discussed the optimization approach in detail with our architect, David, and we have an optimized SQL query that has already been compared against the original query using production data. All five bucket counts matched.
+I have two SQL implementations:
 
-I now need to integrate this optimized SQL into our Java Spring Boot application following David's recommendations.
+1. ORIGINAL QUERY:
+Already present in NurseReviewMeasureDropDownRepository.java.
+java/com/transcendinginsights/acuity/nursereview/repository/NurseReviewMeasureDropDownRepository.java
 
-IMPORTANT: This is an ANALYSIS AND PLANNING step only.
-Do not modify files, implement code, run database queries, or commit anything.
+3. OPTIMIZED QUERY:
+David (our architect) provided an optimized SQL query.
+src/main/resources/test_data/optimized.sql
 
-CONTEXT
+IMPORTANT:
+David and I already executed and compared the original and optimized SQL against production data. All five bucket counts matched.
 
-The existing implementation is in the Nurse Review module.
+The optimization approach is approved. Do not redesign the SQL or suggest alternative performance optimizations.
 
-Relevant components include:
+My task is to integrate and refactor David's optimized query into our existing Spring Boot application.
+
+FIRST, ANALYZE THE REPOSITORY.
+DO NOT MODIFY ANY FILES YET.
+
+DAVID'S IMPLEMENTATION REQUIREMENTS
+
+1. Reusable SQL generation
+
+Currently, the optimized query repeats nearly identical SQL five times for:
+
+- Medicaid
+- Medicare
+- Florida Medicare
+- Florida Medicaid
+- CarePlus
+
+David recommended creating one reusable Java function/template to generate each bucket-specific query.
+
+The SQL structure remains the same. Only certain conditions vary.
+
+2. Dynamic conditions
+
+The reusable query must support:
+
+- measureYear: existing runtime parameter
+- isOnshore: existing nullable runtime parameter
+- LOB: Medicare or Medicaid
+- State: Florida, non-Florida, or unrestricted when applicable
+- Contract: NULL/N versus Y for CarePlus
+- Period: CYTD or PFY
+
+Use the exact predicates from the approved optimized SQL as the reference.
+
+3. CYTD/PFY handling
+
+David recommended determining CYTD/PFY in Java instead of using the original SQL OR conditions and measure_years join.
+
+His suggested rule:
+
+Use CYTD when:
+CYTD = 'Y' and compliantCYTD = 'N'
+CYTD when MeasureYear = calendar year
+
+- Requested measure year equals the current calendar year.
+- OR the current date is within the configured Nurse Review flip-date window for the requested measure year.
+
+Otherwise, use PFY for applicable previous-year requests.
+PFY = 'Y' and compliantPFY = 'N'
+MeasureYear != Calendar Year and currentDate <= measureYear + nurseReviewFlipMonth + nurseReviewFlipDay
+
+The application has nurseReviewFlipMonth and nurseReviewFlipDay configuration properties in YAML.
+
+Inspect their actual definitions and any existing utilities that already implement measurement-year or flip-date logic.
+
+Determine how to implement this rule correctly using existing application conventions.
+
+CYTD SQL uses:
+- CYTD
+- compliantCYTD
+- eligibilityDateCYTD
+
+PFY SQL uses:
+- PFY
+- compliantPFY
+- eligibilityDatePFY
+
+Preserve the original contract-column behavior.
+
+Do not hardcode years such as 2025 or 2026.
+
+4. Query generation and execution
+
+Generate the five bucket-specific COUNT queries using the reusable template.
+
+Combine them using UNION ALL.
+
+Execute the combined SQL as one database call, using the existing project's database-access conventions.
+
+Do not create five separate database calls.
+
+Use bound parameters for values and fixed, allowlisted SQL fragments for dynamic column names and conditions.
+
+5. Output format
+
+The original query returns one row with these five columns, in this order:
+
+- toBeReviewedMedicaid
+- toBeReviewedMedicare
+- toBeReviewedMedicareFlorida
+- toBeReviewedMedicaidFlorida
+- toBeReviewedCarePlus
+
+My optimized SQL already contains an outer COALESCE(MAX(CASE...)) wrapper to preserve this output.
+
+Retain that approach unless an existing project pattern provides an equally simple compatible implementation.
+
+Preserve NurseReviewTotalCount and the existing Java/API response mapping.
+
+No Angular changes should be required.
+
+6. Preserve existing functionality
+
+Do not change:
+- RANK() semantics
+- Existing attestation filtering
+- HEDIS eligibility-date matching
+- Bucket-specific predicates
+- isOnshore null/0/1 behavior
+- Existing business logic
+
+David's optimized query is the approved SQL reference.
+
+The goal is to remove duplicated SQL and make its varying predicates configurable, not rewrite the calculations.
+
+7. Minimal application changes
+
+Inspect:
 - NurseReviewMeasureDropDownRepository.java
 - NurseReviewService.java
 - NurseReviewTotalCount
 - NurseReviewUtils.setKpiItems()
+- Related configuration classes/YAML
+- Existing dynamic SQL and repository implementations
+- Callers of the current KPI-count method
 
-Find their actual locations and inspect the current implementation.
+David specifically warned that other application code might reuse the existing query. Check all usages before recommending changes.
 
-The existing repository method is:
+Prefer the smallest maintainable implementation following existing project conventions.
 
-getAttestationStatusCountsForMeasureYear(
-    String measureYear,
-    Integer isOnshore
-)
+Do not introduce unnecessary dependencies, generic frameworks, unrelated refactoring, or Angular changes.
 
-The old SQL calculates five bucket counts using SUM(CASE WHEN...) and joins attestation_status, hedis_details, and measure_years.
+YOUR TASK FOR NOW
 
-DAVID'S APPROVED OPTIMIZATION APPROACH
+Analyze the code and provide:
 
-1. Replace the original query with five bucket-specific COUNT queries combined using UNION ALL.
+1. Current implementation flow.
+2. Whether the optimized SQL can be implemented using the existing repository pattern or needs a custom repository.
+3. Recommended reusable query-builder structure.
+4. How each of the five bucket variations will be generated.
+5. How CYTD/PFY will be selected using existing configuration.
+6. How measureYear and isOnshore will be passed.
+7. How the five generated queries will be combined and executed once.
+8. How the original five-column response will be preserved.
+9. Exact files and methods requiring changes.
+10. A short, practical implementation sequence and relevant tests.
 
-2. Push bucket-specific filters directly into the HEDIS details selection to reduce the rows involved in joins.
+Keep your response focused on integration and code rework.
 
-3. Remove the measure_years join from the optimized SQL.
+Do not:
+- Modify code yet.
+- Rewrite or further optimize David's SQL.
+- Add indexes or modify database schemas.
+- Change unrelated code.
+- Execute database queries.
+- Commit changes.
 
-4. Select CYTD or PFY in Java rather than using OR conditions in SQL.
 
-5. Reuse one common SQL template rather than maintaining five nearly identical queries manually.
+Provide a concise implementation plan with specific file paths and methods.
 
-6. Generate the five bucket queries dynamically using controlled variations:
-
-   - LOB: Medicare or Medicaid
-   - State: Florida, non-Florida, or all states as required
-   - Contract: regular or CarePlus
-   - Period: CYTD or PFY
-   - isOnshore: null, 0, or 1
-
-7. Combine all five generated queries into one SQL statement executed in a single database call.
-
-8. Preserve the existing five-column SQL output and the NurseReviewTotalCount response contract. No Angular changes should be needed.
-
-CYTD/PFY REQUIREMENT
-
-David recommended using Java to determine the period using:
-
-- Requested measureYear
-- Current calendar year/date
-- nurseReviewFlipMonth
-- nurseReviewFlipDay from application YAML
-
-Find these properties and inspect whether the application already has reusable configuration or date-handling logic.
-
-The generated SQL should select the corresponding CYTD or PFY eligibility and compliance columns.
-
-The original query's contract-field behavior should remain unchanged unless the existing implementation establishes otherwise.
-
-OTHER REQUIREMENTS
-
-- Preserve existing isOnshore behavior, including null.
-- Preserve existing RANK() semantics.
-- Preserve the existing five KPI output aliases and types.
-- Use bound parameters for values.
-- Use fixed, allowlisted SQL fragments for dynamic identifiers and conditions.
-- Follow existing Spring Boot and repository conventions.
-- Avoid unnecessary new classes, dependencies, or refactoring.
-- Do not change indexes, schemas, Liquibase, or Angular.
-
-YOUR TASK
-
-Inspect the repository and determine:
-
-1. Where the existing KPI query is defined and how NurseReviewService calls it.
-
-2. All callers of the current repository method and whether they can safely share the optimized implementation.
-
-3. How NurseReviewTotalCount maps the SQL results.
-
-4. How the current measureYear and isOnshore parameters are passed.
-
-5. Where nurseReviewFlipMonth and nurseReviewFlipDay are configured and how they can be accessed from Java.
-
-6. Whether the project already has custom repositories, EntityManager, JdbcTemplate, or reusable native SQL-building patterns.
-
-7. The best way to implement David's reusable query-generation approach within the existing architecture.
-
-8. Which files and methods need changes, keeping the implementation minimal.
-
-9. How to preserve the original five-column output while using five UNION ALL branches.
-
-10. What unit/integration tests should be added or updated.
-
-Look for David's optimized SQL in the available repository or local reference files. If it is not available, clearly identify that dependency. Do not reconstruct the full optimized SQL from assumptions.
-
-OUTPUT FORMAT
-
-Provide a concise implementation plan containing:
-
-A. Current code flow with file paths and methods.
-B. Recommended implementation architecture.
-C. Exact files to modify or create.
-D. How CYTD/PFY selection will work.
-E. How reusable bucket SQL generation will work.
-F. How the existing output mapping will be preserved.
-G. Testing approach.
-H. Any missing inputs needed before implementation.
-
-Keep the plan focused on implementing David's recommendations.
-
-Do not write or modify code yet.
-Wait for my approval before implementation.
+Wait for my approval before making changes.
