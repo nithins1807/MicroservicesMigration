@@ -1,86 +1,125 @@
-I want to develop an AI-powered Test Data Management Agent for our Compass team to help developers and QA engineers easily create, insert, and maintain test data in the existing `test-data-management` repository.
 
-**Primary Goal:**
+I'm working on ADO Story 9553018:
+"Optimize the SQL Hedis_Details SQL statement to make it more performant."
 
-Build an agent that allows team members to describe their testing requirements in natural language, such as:
+I discussed the optimization approach in detail with our architect, David, and we have an optimized SQL query that has already been compared against the original query using production data. All five bucket counts matched.
 
-- "Add a new Medicare member with HEDIS CBP data."
-- "Create a Medicaid member with a non-compliant GSD measure."
-- "Add test data for an existing member for a specific measure year."
-- "Generate test data for a Nurse Review scenario."
+I now need to integrate this optimized SQL into our Java Spring Boot application following David's recommendations.
 
-The agent should understand the request, identify the relevant datasets, generate valid test records, maintain relationships across dependent tables/files, and help insert the data into the appropriate locations using our existing workflows.
+IMPORTANT: This is an ANALYSIS AND PLANNING step only.
+Do not modify files, implement code, run database queries, or commit anything.
 
-**Phase 1: Repository Analysis (Do this first)**
+CONTEXT
 
-Analyze the existing `test-data-management` repository, primarily the Synapse folder, focusing initially on:
+The existing implementation is in the Nurse Review module.
 
-1. Membership
-2. Center Grouper
-3. HEDIS
+Relevant components include:
+- NurseReviewMeasureDropDownRepository.java
+- NurseReviewService.java
+- NurseReviewTotalCount
+- NurseReviewUtils.setKpiItems()
 
-Investigate:
+Find their actual locations and inspect the current implementation.
 
-- Existing datasets, file structures, columns, datatypes, and formats.
-- Important identifiers, unique keys, and allowed values.
-- Relationships between Membership, Center Grouper, and HEDIS.
-- How MemberGenKey and other identifiers are maintained across related datasets.
-- Existing date-update scripts and how they handle measure-year changes.
-- Existing scripts and processes for adding or updating test data.
-- Relevant documentation and aggregator mappings, where accessible.
-- How changes to one dataset affect other dependent datasets.
+The existing repository method is:
 
-Identify any undocumented business rules, constraints, or mappings that require clarification. Do not assume relationships or rules without evidence.
+getAttestationStatusCountsForMeasureYear(
+    String measureYear,
+    Integer isOnshore
+)
 
-**Phase 2: Propose the Agent Architecture**
+The old SQL calculates five bucket counts using SUM(CASE WHEN...) and joins attestation_status, hedis_details, and measure_years.
 
-Based on the analysis, propose a metadata-driven AI agent that:
+DAVID'S APPROVED OPTIMIZATION APPROACH
 
-1. Accepts natural-language test data requests from team members.
-2. Identifies which datasets and columns need to be populated or updated.
-3. Uses metadata configuration files to understand column constraints, allowed values, and relationships.
-4. Reuses existing member identifiers when appropriate or generates new valid identifiers.
-5. Generates consistent records across Membership, Center Grouper, and HEDIS.
-6. Supports adding records to existing test datasets rather than replacing their contents.
-7. Handles relevant dates, measure years, and dependent records.
-8. Validates generated data against schema constraints, relationships, and known business rules.
-9. Shows the proposed changes for review before inserting anything.
-10. Inserts or updates records through the existing approved repository workflow only after explicit user approval.
+1. Replace the original query with five bucket-specific COUNT queries combined using UNION ALL.
 
-Use deterministic code for data generation and validation wherever possible. Use AI primarily for understanding test scenarios, identifying dependencies, interpreting metadata, and orchestrating the workflow.
+2. Push bucket-specific filters directly into the HEDIS details selection to reduce the rows involved in joins.
 
-**Phase 3: Proof of Concept**
+3. Remove the measure_years join from the optimized SQL.
 
-Recommend a minimal POC using Membership, Center Grouper, and HEDIS.
+4. Select CYTD or PFY in Java rather than using OR conditions in SQL.
 
-For example:
+5. Reuse one common SQL template rather than maintaining five nearly identical queries manually.
 
-A developer requests: "Create a new Medicare member with a non-compliant CBP measure for measure year 2026."
+6. Generate the five bucket queries dynamically using controlled variations:
 
-The agent should determine which files require changes, generate valid related records, preserve cross-table references, validate the resulting data, and present a preview of the changes.
+   - LOB: Medicare or Medicaid
+   - State: Florida, non-Florida, or all states as required
+   - Contract: regular or CarePlus
+   - Period: CYTD or PFY
+   - isOnshore: null, 0, or 1
 
-The POC should demonstrate how a team member can add test data without manually understanding every dependent dataset.
+7. Combine all five generated queries into one SQL statement executed in a single database call.
 
-**Expected Output:**
+8. Preserve the existing five-column SQL output and the NurseReviewTotalCount response contract. No Angular changes should be needed.
 
-Provide:
+CYTD/PFY REQUIREMENT
 
-1. Repository analysis with references to actual files and code.
-2. Dataset dependencies and column mappings.
-3. Existing test data insertion/update workflow.
-4. Proposed agent architecture and metadata configuration structure.
-5. Recommended agent implementation approach, including how Claude Code could be used.
-6. Step-by-step POC development plan.
-7. Risks, limitations, and unanswered business-rule questions.
+David recommended using Java to determine the period using:
 
-**Important Constraints:**
+- Requested measureYear
+- Current calendar year/date
+- nurseReviewFlipMonth
+- nurseReviewFlipDay from application YAML
 
-- Do not modify any files yet.
-- Do not execute inserts, updates, or aggregation jobs.
-- Do not invent undocumented mappings or business rules.
-- Preserve existing data and repository conventions.
-- Do not expose PHI or sensitive data to AI tools.
-- The agent must support human review and explicit approval before applying changes.
-- Keep the solution reusable, maintainable, and extensible to other datasets in the future.
+Find these properties and inspect whether the application already has reusable configuration or date-handling logic.
 
-Start with the repository analysis and architecture recommendations only. We will implement the agent incrementally after reviewing the findings.
+The generated SQL should select the corresponding CYTD or PFY eligibility and compliance columns.
+
+The original query's contract-field behavior should remain unchanged unless the existing implementation establishes otherwise.
+
+OTHER REQUIREMENTS
+
+- Preserve existing isOnshore behavior, including null.
+- Preserve existing RANK() semantics.
+- Preserve the existing five KPI output aliases and types.
+- Use bound parameters for values.
+- Use fixed, allowlisted SQL fragments for dynamic identifiers and conditions.
+- Follow existing Spring Boot and repository conventions.
+- Avoid unnecessary new classes, dependencies, or refactoring.
+- Do not change indexes, schemas, Liquibase, or Angular.
+
+YOUR TASK
+
+Inspect the repository and determine:
+
+1. Where the existing KPI query is defined and how NurseReviewService calls it.
+
+2. All callers of the current repository method and whether they can safely share the optimized implementation.
+
+3. How NurseReviewTotalCount maps the SQL results.
+
+4. How the current measureYear and isOnshore parameters are passed.
+
+5. Where nurseReviewFlipMonth and nurseReviewFlipDay are configured and how they can be accessed from Java.
+
+6. Whether the project already has custom repositories, EntityManager, JdbcTemplate, or reusable native SQL-building patterns.
+
+7. The best way to implement David's reusable query-generation approach within the existing architecture.
+
+8. Which files and methods need changes, keeping the implementation minimal.
+
+9. How to preserve the original five-column output while using five UNION ALL branches.
+
+10. What unit/integration tests should be added or updated.
+
+Look for David's optimized SQL in the available repository or local reference files. If it is not available, clearly identify that dependency. Do not reconstruct the full optimized SQL from assumptions.
+
+OUTPUT FORMAT
+
+Provide a concise implementation plan containing:
+
+A. Current code flow with file paths and methods.
+B. Recommended implementation architecture.
+C. Exact files to modify or create.
+D. How CYTD/PFY selection will work.
+E. How reusable bucket SQL generation will work.
+F. How the existing output mapping will be preserved.
+G. Testing approach.
+H. Any missing inputs needed before implementation.
+
+Keep the plan focused on implementing David's recommendations.
+
+Do not write or modify code yet.
+Wait for my approval before implementation.
