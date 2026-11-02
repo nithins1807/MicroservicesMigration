@@ -1,144 +1,66 @@
 
-I'm investigating the CYTD/PFY selection logic for ADO Story 9553018 before implementing David's optimized Nurse Review KPI query.
+I'm continuing the CYTD/PFY investigation for ADO Story 9553018.
 
-ANALYSIS ONLY. Do not modify any files or execute database queries.
+You previously analyzed the acuity-ui repository and identified uncertainty around how measure_years is populated and how its CYTD/PFY/PPFY mappings change.
 
-I have confirmed the following information.
+I now have access to two additional repositories:
+- aggregator
+- acuity-data-management
 
-EXISTING DATABASE MAPPING
-
-The measure_years table currently contains:
-
-measurementYear | month | abbr
-2026            | 10    | CYTD
-2025            | 05    | PFY
-2024            | 04    | PPFY
-
-These are actual database values, not assumptions.
-
-APPLICATION YAML
-
-nurseReviewFlipMonth: '04'
-nurseReviewFlipDay: '01'
-
-So the configured Nurse Review flip month/day is April 1.
-
-CURRENT SQL
-
-The original query in NurseReviewMeasureDropDownRepository joins measure_years on:
-
-my.measurementYear = atts.measure_year
-
-It selects:
-
-CYTD:
-my.abbr = 'CYTD'
-AND CYTD = 'Y'
-AND compliantCYTD = 'N'
-AND the CYTD eligibility-date condition
-
-PFY:
-my.abbr = 'PFY'
-AND PFY = 'Y'
-AND compliantPFY = 'N'
-AND the PFY eligibility-date condition
-
-There is no PPFY branch in the original query.
-
-DAVID'S RECOMMENDATION
-
-David wants Java to decide whether the optimized SQL uses CYTD or PFY, removing the measure_years join.
-
-His proposed CYTD rule was:
-
-measureYear == calendarYear
-
-OR
-
-measureYear != calendarYear
-AND currentDate <= constructed Nurse Review flip date
-
-The exact year used to construct that flip date needs verification.
-
-The selected period determines which columns the SQL generator uses:
-
-CYTD:
-CYTD, compliantCYTD, eligibilityDateCYTD
-
-PFY:
-PFY, compliantPFY, eligibilityDatePFY
+ANALYSIS ONLY. Do not modify files, execute database queries, or make commits.
 
 YOUR TASK
 
-1. Inspect NurseReviewUtils, especially:
-   - getCurrentNurseReviewMeasureYear()
-   - getNurseReviewFlipDate()
-   - Related date/year utilities
+Search both repositories for the actual logic responsible for populating, calculating, or updating the measure_years table.
 
-2. Inspect NurseReviewService and the controller to determine exactly how the requested measureYear is calculated and passed to the KPI repository.
+Specifically investigate:
 
-3. Inspect UI configuration and application.yaml to determine how the April 1 flip is applied.
+1. Where measurementYear, month, abbr, and record_id are populated.
 
-4. Investigate how measure_years is populated or updated, if that logic exists in the repository.
+2. Where CYTD, PFY, and PPFY values are assigned or updated.
 
-5. Determine whether measure_years.abbr is a static mapping or updated as part of the annual measurement-year rollover.
-
-6. Determine what the month column represents. Do not assume it is the Nurse Review flip month.
-
-7. Explain the relationship between:
+3. Whether the mapping changes based on:
    - Calendar year
-   - Requested measureYear
-   - Active Nurse Review measurement year
-   - measure_years.abbr
-   - April 1 flip date
+   - Nurse Review flip date (April 1)
+   - Data availability or ingestion
+   - Scheduled aggregator/ADF jobs
+   - Another business rule
 
-8. Explain whether Java can reliably replace the measure_years.abbr lookup using existing application logic.
+4. When a measurement year transitions from CYTD to PFY and eventually PPFY.
 
-9. Explain what should happen for PPFY (2024 in the current table). The original SQL does not process PPFY, so do not automatically map unsupported years to PFY.
+5. Whether this happens automatically and what triggers it.
 
-10. Determine the appropriate year for constructing the flip date:
-    - requested measureYear
-    - requested measureYear + 1
-    - current calendar year
-    - or another existing application rule
+6. Whether there is a January-to-April transition period where the active Nurse Review year differs from the CYTD year.
 
-TEST SCENARIOS
+7. Trace relevant source files, SQL scripts, mappings, jobs, and configuration.
 
-Using the actual April 1 configuration, provide a decision table for:
+8. Compare the findings with the existing acuity-ui logic:
+   NurseReviewUtils.getCurrentNurseReviewMeasureYear()
+   NurseReviewService.calculateMeasureYear()
+   measure_years.abbr usage in NurseReviewMeasureDropDownRepository.
 
-A. November 2, 2026, requested measureYear 2026
-B. November 2, 2026, requested measureYear 2025
-C. November 2, 2026, requested measureYear 2024
-D. January 15, 2027, requested measureYear 2026
-E. March 31, 2027, requested measureYear 2026
-F. April 1, 2027, requested measureYear 2026
-G. April 2, 2027, requested measureYear 2026
-H. April 2, 2027, requested measureYear 2027
+9. Determine whether David's recommended Java CYTD/PFY selection can safely replace the measure_years join without changing existing behavior.
 
-For each scenario, explain:
-- Active Nurse Review measurement year
-- Expected CYTD, PFY, PPFY, or unsupported behavior
-- Whether the result is established by code/database evidence or requires confirmation
+Existing known data:
+- 2026 = CYTD
+- 2025 = PFY
+- 2024 = PPFY
+- Nurse Review flip month = 04
+- Nurse Review flip day = 01
 
-Do not assume the current measure_years snapshot proves its future values.
+IMPORTANT:
+Do not assume the Nurse Review flip date also controls the measure_years table.
 
-IMPORTANT
-
-We are not redesigning the SQL.
-
-The optimized SQL has already been validated with David for production counts.
-
-Our only goal here is to determine the correct Java period-selection logic for generating the five bucket queries.
+Distinguish confirmed source-code behavior from assumptions or inferred schedules.
 
 OUTPUT
 
-1. Simple explanation of the current logic.
-2. Decision table with the scenarios above.
-3. Exact reusable Java methods and configuration.
-4. Whether David's proposed logic matches the existing application.
-5. Any remaining ambiguity requiring David's confirmation.
+A. Where measure_years is populated or maintained.
+B. How and when CYTD/PFY/PPFY mappings change.
+C. Whether the Java logic can replace the SQL join.
+D. Exact recommended period-selection rule for Story 9553018.
+E. Any remaining questions requiring David's confirmation.
 
-Provide file paths and line numbers.
+Provide actual file paths and line numbers.
 
-Do not modify code.
-Do not implement anything yet.
+Keep the investigation focused. Do not implement anything yet.
