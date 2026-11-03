@@ -1,66 +1,40 @@
 
-I'm continuing the CYTD/PFY investigation for ADO Story 9553018.
+Continue ADO Story 9553018.
 
-You previously analyzed the acuity-ui repository and identified uncertainty around how measure_years is populated and how its CYTD/PFY/PPFY mappings change.
+David has reviewed and corrected the CYTD/PFY logic. Update the existing plan and proceed with implementation.
 
-I now have access to two additional repositories:
-- aggregator
-- acuity-data-management
+IMPORTANT CORRECTION:
 
-ANALYSIS ONLY. Do not modify files, execute database queries, or make commits.
+David's spreadsheet distinguishes:
+1. HEDIS measurement year — latest available data year.
+2. Nurse Review year — calculated using the existing April 1 flip logic.
 
-YOUR TASK
+Expected behavior from David's examples:
+- Jan 2027: HEDIS MY=2026, NR year=2026 → CYTD
+- Feb 2027: HEDIS MY=2027, NR year=2026 → PFY
+- Mar 2027: HEDIS MY=2027, NR year=2026 → PFY
+- Apr 2027: HEDIS MY=2027, NR year=2027 → CYTD
 
-Search both repositories for the actual logic responsible for populating, calculating, or updating the measure_years table.
+IMPLEMENTATION:
+- Keep existing Nurse Review year calculation unchanged.
+- Use existing data-driven MeasureYearService information to select CYTD/PFY in Java.
+- CYTD when Nurse Review year matches the data's CYTD year.
+- PFY when Nurse Review year matches the data's PFY year.
+- Preserve original no-match behavior for unsupported years.
+- Do not incorrectly compare the Nurse Review year directly against the calendar year.
+- Do not introduce MY+1 flip-date assumptions.
+- Do not join measure_years in optimized SQL.
+- Ensure the implementation matches David's spreadsheet examples.
 
-Specifically investigate:
+SQL REQUIREMENTS:
+- Use the existing optimized.sql reference.
+- One reusable template, five bucket branches, UNION ALL.
+- Preserve all original bucket conditions and five-column output.
+- CarePlus includes Florida (David confirmed).
+- Preserve isOnshore handling and existing repository contract.
+- No unrelated changes.
 
-1. Where measurementYear, month, abbr, and record_id are populated.
+Update the plan and implement now.
+Add focused tests, run relevant validation, and report changed files and results.
 
-2. Where CYTD, PFY, and PPFY values are assigned or updated.
-
-3. Whether the mapping changes based on:
-   - Calendar year
-   - Nurse Review flip date (April 1)
-   - Data availability or ingestion
-   - Scheduled aggregator/ADF jobs
-   - Another business rule
-
-4. When a measurement year transitions from CYTD to PFY and eventually PPFY.
-
-5. Whether this happens automatically and what triggers it.
-
-6. Whether there is a January-to-April transition period where the active Nurse Review year differs from the CYTD year.
-
-7. Trace relevant source files, SQL scripts, mappings, jobs, and configuration.
-
-8. Compare the findings with the existing acuity-ui logic:
-   NurseReviewUtils.getCurrentNurseReviewMeasureYear()
-   NurseReviewService.calculateMeasureYear()
-   measure_years.abbr usage in NurseReviewMeasureDropDownRepository.
-
-9. Determine whether David's recommended Java CYTD/PFY selection can safely replace the measure_years join without changing existing behavior.
-
-Existing known data:
-- 2026 = CYTD
-- 2025 = PFY
-- 2024 = PPFY
-- Nurse Review flip month = 04
-- Nurse Review flip day = 01
-
-IMPORTANT:
-Do not assume the Nurse Review flip date also controls the measure_years table.
-
-Distinguish confirmed source-code behavior from assumptions or inferred schedules.
-
-OUTPUT
-
-A. Where measure_years is populated or maintained.
-B. How and when CYTD/PFY/PPFY mappings change.
-C. Whether the Java logic can replace the SQL join.
-D. Exact recommended period-selection rule for Story 9553018.
-E. Any remaining questions requiring David's confirmation.
-
-Provide actual file paths and line numbers.
-
-Keep the investigation focused. Do not implement anything yet.
+Do not modify production data.
