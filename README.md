@@ -1,40 +1,18 @@
+We are building a metadata-driven test-data generator. David recommended starting with Synapse datasets for Membership, Center Grouper, and HEDIS.
 
-Continue ADO Story 9553018.
+For this first step:
+1. Locate the existing Synapse files for these three dataset families.
+2. Identify their file formats and how their columns are defined.
+3. Locate the update-date script. Briefly explain its inputs and which files/data it updates.
 
-David has reviewed and corrected the CYTD/PFY logic. Update the existing plan and proceed with implementation.
+Save the verified findings in `docs/test-data-agent/findings.md`, including:
+- Exact source paths and relevant code references.
+- Findings for each dataset and the update-date script.
+- Unknowns and unresolved questions.
+- What has already been inspected.
 
-IMPORTANT CORRECTION:
+Use repository evidence only; do not assume missing rules. Keep inspection limited to these inputs and directly relevant documentation.
 
-David's spreadsheet distinguishes:
-1. HEDIS measurement year — latest available data year.
-2. Nurse Review year — calculated using the existing April 1 flip logic.
+For subsequent steps, read this findings file first and update it with new findings. Reinspect sources only when they change or further detail is needed.
 
-Expected behavior from David's examples:
-- Jan 2027: HEDIS MY=2026, NR year=2026 → CYTD
-- Feb 2027: HEDIS MY=2027, NR year=2026 → PFY
-- Mar 2027: HEDIS MY=2027, NR year=2026 → PFY
-- Apr 2027: HEDIS MY=2027, NR year=2027 → CYTD
-
-IMPLEMENTATION:
-- Keep existing Nurse Review year calculation unchanged.
-- Use existing data-driven MeasureYearService information to select CYTD/PFY in Java.
-- CYTD when Nurse Review year matches the data's CYTD year.
-- PFY when Nurse Review year matches the data's PFY year.
-- Preserve original no-match behavior for unsupported years.
-- Do not incorrectly compare the Nurse Review year directly against the calendar year.
-- Do not introduce MY+1 flip-date assumptions.
-- Do not join measure_years in optimized SQL.
-- Ensure the implementation matches David's spreadsheet examples.
-
-SQL REQUIREMENTS:
-- Use the existing optimized.sql reference.
-- One reusable template, five bucket branches, UNION ALL.
-- Preserve all original bucket conditions and five-column output.
-- CarePlus includes Florida (David confirmed).
-- Preserve isOnshore handling and existing repository contract.
-- No unrelated changes.
-
-Update the plan and implement now.
-Add focused tests, run relevant validation, and report changed files and results.
-
-Do not modify production data.
+Only create/update the findings document. Do not modify existing code/data, generate metadata, or implement anything yet. Return a short summary and stop.
